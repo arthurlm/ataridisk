@@ -1,0 +1,31 @@
+[package]
+name = "ataridisk"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+# Basics
+log = "0.4.14"
+env_logger = "0.9.0"
+anyhow = "1.0.42"
+thiserror = "1.0.26"
+chrono = "0.4.19"
+
+# Computation and checksum
+crc-any = "2.3.12"
+lz4_flex = { version = "0.8.0", default-features = false }
+
+# Serialization
+serde = { version = "1.0.127", features = ["derive"] }
+serde_json = "1.0.66"
+
+# Serial communication
+serialport = "4.0.1"
+
+# CLI stuffs
+structopt = "0.3.22"
+indicatif = "0.16.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
