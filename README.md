@@ -1,6 +1,6 @@
-# Rust serial disk
+# Atari serial disk rust
 
-This project is a port of [SerialDisk](https://github.com/z80andrew/SerialDisk) in Rust.
+This project is a port of [SerialDisk](https://github.com/z80andrew/SerialDisk) in [Rust](https://www.rust-lang.org).
 
 There is no real purposes on this app except:
 
