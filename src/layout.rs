@@ -134,6 +134,11 @@ impl DiskLayout {
         self.count_fat_sectors() + self.root_directory_sectors
     }
 
+    #[inline]
+    pub fn first_free_cluster(&self) -> u16 {
+        self.first_free_sector() / self.sectors_per_cluster()
+    }
+
     /// Convert disk layout to buffer that Atari can understand.
     pub fn bios_parameter_block(&self) -> [u8; 18] {
         let mut buffer = [0; 18];

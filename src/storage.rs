@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, fs, mem, path::Path};
 
 use crate::{
-    dos,
     entries::{StorageEntry, StorageTable},
     error::{self, SerialDiskError},
     fat::FileAllocationTable,
@@ -35,13 +34,14 @@ impl<'a> DiskStorage<'a> {
     pub fn new(disk_layout: &'a DiskLayout) -> Self {
         // Init buffers
         let fat = FileAllocationTable::new(
-            disk_layout.count_1fat_sectors() as usize * disk_layout.bytes_per_sector() as usize
-                / mem::size_of::<u16>(),
+            ((disk_layout.count_1fat_sectors() as usize * disk_layout.bytes_per_sector() as usize)
+                / mem::size_of::<u16>())
+                - disk_layout.first_free_cluster() as usize,
         );
 
         let root_entries = StorageTable::new(
             disk_layout.root_directory_sectors() as usize * disk_layout.bytes_per_sector() as usize
-                / StorageEntry::size_of(),
+                / mem::size_of::<StorageEntry>(),
         );
 
         // Create struct
@@ -127,8 +127,7 @@ impl<'a> DiskStorage<'a> {
             .into_iter()
             // Filter invalid read dir result
             .filter_map(|r| r.ok())
-            // Filter invalid DOS file entry
-            .filter(|e| dos::is_valid_filename(e.path()))
+            // Skip hidden files
             .filter(|e| !e.file_name().to_str().unwrap().starts_with('.'))
             // Filter missing file type entry
             .filter_map(|e| {
@@ -140,9 +139,13 @@ impl<'a> DiskStorage<'a> {
             })
         {
             if file_type.is_dir() {
-                self.add_directory(path, parent_index)?;
+                if let Err(e) = self.add_directory(&path, parent_index) {
+                    log::warn!("Cannot add {:?} (error: {})", path, e);
+                }
             } else if file_type.is_file() {
-                self.add_file(path, parent_index)?;
+                if let Err(e) = self.add_file(&path, parent_index) {
+                    log::warn!("Cannot add {:?} (error: {})", path, e);
+                }
             } else {
                 log::warn!("Skipping: {:?} (unhandled file type)", path);
             }
@@ -168,7 +171,7 @@ impl<'a> DiskStorage<'a> {
             .ok_or(SerialDiskError::DiskFull)?;
 
         let table = StorageTable::new(
-            self.disk_layout.bytes_per_sector() as usize / StorageEntry::size_of(),
+            self.disk_layout.bytes_per_sector() as usize / mem::size_of::<StorageEntry>(),
         );
         self.sector_data.insert(
             self.disk_layout
@@ -178,19 +181,19 @@ impl<'a> DiskStorage<'a> {
 
         // Add entry for this folder
         self.add_storage_entry(
-            StorageEntry::from_path_and_index(&path, entry_cluster_index),
+            StorageEntry::from_path_and_index(&path, entry_cluster_index)?,
             parent_cluster_index,
-        );
+        )?;
 
         // Add . and .. in new folder
         self.add_storage_entry(
             StorageEntry::from_static_dir_info(".", "", entry_cluster_index),
             entry_cluster_index,
-        );
+        )?;
         self.add_storage_entry(
             StorageEntry::from_static_dir_info("..", "", parent_cluster_index),
             entry_cluster_index,
-        );
+        )?;
 
         // Import folder content
         self.import_sub_path(path, entry_cluster_index)?;
@@ -243,14 +246,14 @@ impl<'a> DiskStorage<'a> {
 
         // Add to entry table
         self.add_storage_entry(
-            StorageEntry::from_path_and_index(&path, first_cluster_block_index),
+            StorageEntry::from_path_and_index(&path, first_cluster_block_index)?,
             parent_index,
-        );
+        )?;
 
         Ok(())
     }
 
-    fn add_storage_entry(&mut self, entry: StorageEntry, cluster_index: u16) -> bool {
+    fn add_storage_entry(&mut self, entry: StorageEntry, cluster_index: u16) -> error::Result<()> {
         if cluster_index == ROOT_INDEX {
             self.root_entries.push(entry)
         } else {

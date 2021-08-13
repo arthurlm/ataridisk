@@ -1,53 +1,94 @@
 use std::path::Path;
 
-/// Check if filename match DOS constraint.
+use crate::error::{self, SerialDiskError};
+
+macro_rules! split_os_str {
+    ($x:expr, $size:expr) => {{
+        let s = $x.to_str().unwrap();
+        let l = if s.len() > $size { $size } else { s.len() };
+        s[..l].to_string()
+    }};
+}
+
+/// Convert path into valid DOS components and return
+/// filename (8 bytes) and extension (3 bytes).
 ///
-/// - File stem must have max 8 chars
-/// - Extension must have max 3 chars
-/// - Must contains only ASCII chars
-pub fn is_valid_filename<P>(path: P) -> bool
+/// It fails if filename contains not ASCII chars.
+pub fn as_valid_file_components<P>(path: P) -> error::Result<(String, String)>
 where
     P: AsRef<Path>,
 {
     let p = path.as_ref();
-    let is_ascii = p.to_str().map(|f| f.is_ascii()).unwrap_or(false);
-    let is_stem_valid = p.file_stem().map(|f| f.len() <= 8).unwrap_or(false);
-    let is_ext_valid = p.extension().map(|f| f.len() <= 3).unwrap_or(true);
+    let file_stem = p.file_stem().ok_or(SerialDiskError::InvalidFilename)?;
+    let extension = p.extension().unwrap_or_default();
 
-    is_ascii && is_stem_valid && is_ext_valid
+    if !file_stem.is_ascii() || !extension.is_ascii() {
+        return Err(SerialDiskError::InvalidChars);
+    }
+
+    Ok((split_os_str!(file_stem, 8), split_os_str!(extension, 3)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    macro_rules! file_components {
+        ($name:expr) => {
+            file_components!($name, "")
+        };
+        ($name:expr, $ext:expr) => {
+            Ok(($name.to_string(), $ext.to_string()))
+        };
+    }
+
     #[test]
     fn test_valid_path() {
-        // No extension
-        assert!(is_valid_filename("TOTO"));
-        assert!(is_valid_filename("toto"));
-
-        // Not so long
-        assert!(is_valid_filename("TOTO.MD"));
-        assert!(is_valid_filename("toto.md"));
+        // No extension lower / upper cases
+        assert_eq!(as_valid_file_components("TOTO"), file_components!("TOTO"));
+        assert_eq!(as_valid_file_components("toto"), file_components!("toto"));
+        assert_eq!(
+            as_valid_file_components("TOTO.MD"),
+            file_components!("TOTO", "MD")
+        );
+        assert_eq!(
+            as_valid_file_components("toto.md"),
+            file_components!("toto", "md")
+        );
 
         // Max allowed size
-        assert!(is_valid_filename("TOTOTOTO.TXT"));
-        assert!(is_valid_filename("totototo.txt"));
+        assert_eq!(
+            as_valid_file_components("foo_bar_"),
+            file_components!("foo_bar_")
+        );
+        assert_eq!(
+            as_valid_file_components("foo_bar_.txt"),
+            file_components!("foo_bar_", "txt")
+        );
+
+        // Above max size
+        assert_eq!(
+            as_valid_file_components("foo_bar_baz.jpeg"),
+            file_components!("foo_bar_", "jpe")
+        );
     }
 
     #[test]
     fn test_invalid_path() {
-        // Extension too long
-        assert!(!is_valid_filename("TOTO.DOCX"));
+        // No filename
+        assert_eq!(
+            as_valid_file_components("."),
+            Err(SerialDiskError::InvalidFilename)
+        );
 
-        // Invalid ASCII chars
-        assert!(!is_valid_filename("éà.TXT"));
-
-        // Filename too long
-        assert!(!is_valid_filename("TOTO_TOTO.DOC"));
-
-        // Lot of sub-extension
-        assert!(!is_valid_filename("TOTO.TAR.GZ.BZ2"));
+        // Invalid chars
+        assert_eq!(
+            as_valid_file_components("héhé.txt"),
+            Err(SerialDiskError::InvalidChars)
+        );
+        assert_eq!(
+            as_valid_file_components("foo.héhé"),
+            Err(SerialDiskError::InvalidChars)
+        );
     }
 }

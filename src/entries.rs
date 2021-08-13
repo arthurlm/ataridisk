@@ -2,7 +2,10 @@ use std::{mem, os::unix::prelude::MetadataExt, path::Path, slice, time::UNIX_EPO
 
 use chrono::prelude::*;
 
-use crate::dos;
+use crate::{
+    dos,
+    error::{self, SerialDiskError},
+};
 
 macro_rules! as_static_str {
     ($input:expr, $size:expr) => {{
@@ -106,17 +109,17 @@ impl StorageEntry {
     }
 
     /// Create a new entry from path
-    pub fn from_path_and_index<P>(path: P, cluster_index: u16) -> Self
+    pub fn from_path_and_index<P>(path: P, cluster_index: u16) -> error::Result<Self>
     where
         P: AsRef<Path>,
     {
-        assert!(dos::is_valid_filename(&path));
-
         let path = path.as_ref();
         assert!(path.exists());
 
-        let name = as_static_str!(path.file_stem().unwrap_or_default().to_str().unwrap(), 8);
-        let ext = as_static_str!(path.extension().unwrap_or_default().to_str().unwrap(), 3);
+        let (name, ext) = dos::as_valid_file_components(&path)?;
+
+        let name = as_static_str!(name, 8);
+        let ext = as_static_str!(ext, 3);
 
         let attr = if path.is_dir() {
             StorageAttr::Directory
@@ -136,7 +139,7 @@ impl StorageEntry {
 
         let size = metadata.size() as u32;
 
-        Self::new(name, ext, attr, mtime_naive, cluster_index, size)
+        Ok(Self::new(name, ext, attr, mtime_naive, cluster_index, size))
     }
 
     /// Create an emtpy entry.
@@ -156,14 +159,6 @@ impl StorageEntry {
             cluster_index: 0,
             size: 0,
         }
-    }
-
-    /// Return size of Self.
-    ///
-    /// This function is a wrapper above `std::mem`.
-    #[inline]
-    pub fn size_of() -> usize {
-        mem::size_of::<Self>()
     }
 }
 
@@ -194,23 +189,22 @@ impl StorageTable {
         unsafe {
             slice::from_raw_parts(
                 self.entries.as_ptr() as *const u8,
-                self.entries.len() * StorageEntry::size_of(),
+                self.entries.len() * mem::size_of::<StorageEntry>(),
             )
         }
     }
 
     /// Add new entry to table and return true of false depending if
     /// table is full or not.
-    pub fn push(&mut self, entry: StorageEntry) -> bool {
+    pub fn push(&mut self, entry: StorageEntry) -> error::Result<()> {
         if self.used_count >= self.entries.capacity() {
-            log::warn!("Disk is out of inode. Cannot add new entry");
-            return false;
+            return Err(SerialDiskError::FolderFull);
         }
 
         self.entries[self.used_count] = entry;
         self.used_count += 1;
 
-        true
+        Ok(())
     }
 }
 
@@ -222,17 +216,20 @@ mod tests {
 
     #[test]
     fn test_empty_rentry() {
-        assert_eq!(StorageEntry::size_of(), EXPECTED_ENTRY_SIZE);
+        assert_eq!(mem::size_of::<StorageEntry>(), EXPECTED_ENTRY_SIZE);
 
         // Check empty at init
         let mut table = StorageTable::new(3);
         assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 3]);
 
         // Check add success and fail the check emptyness
-        assert!(table.push(StorageEntry::empty()));
-        assert!(table.push(StorageEntry::empty()));
-        assert!(table.push(StorageEntry::empty()));
-        assert!(!table.push(StorageEntry::empty()));
+        assert_eq!(table.push(StorageEntry::empty()), Ok(()));
+        assert_eq!(table.push(StorageEntry::empty()), Ok(()));
+        assert_eq!(table.push(StorageEntry::empty()), Ok(()));
+        assert_eq!(
+            table.push(StorageEntry::empty()),
+            Err(SerialDiskError::FolderFull)
+        );
         assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 3]);
     }
 
@@ -241,7 +238,10 @@ mod tests {
         let mut table = StorageTable::new(1);
         assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 1]);
 
-        table.push(StorageEntry::from_path_and_index("./data/TEST.TXT", 0x1234));
+        assert_eq!(
+            table.push(StorageEntry::from_path_and_index("./data/TEST.TXT", 0x1234).unwrap()),
+            Ok(()),
+        );
         assert_eq!(
             table.as_raw(),
             [
@@ -263,7 +263,10 @@ mod tests {
         let mut table = StorageTable::new(1);
         assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 1]);
 
-        table.push(StorageEntry::from_static_dir_info("TEST", "TXT", 0x1234));
+        assert_eq!(
+            table.push(StorageEntry::from_static_dir_info("TEST", "TXT", 0x1234)),
+            Ok(())
+        );
         assert_eq!(
             table.as_raw(),
             [
