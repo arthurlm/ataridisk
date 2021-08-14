@@ -162,6 +162,8 @@ impl DiskLayout {
     /// Convert cluster index to begin sector index.
     pub fn convert_cluster_to_sector(&self, cluster_index: u16) -> u16 {
         let sectors_per_cluster = self.sectors_per_cluster();
+        // This offset comes from atari serial disk prg.
+        // If I have reimplement this, I would remove this weird stuff.
         let sector_offset = self.first_free_sector() - self.reserved_sector();
 
         sector_offset + cluster_index * sectors_per_cluster as u16

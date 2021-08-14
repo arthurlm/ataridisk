@@ -6,6 +6,6 @@
 - [x] readme
 - [x] config + main
 - [x] tests
+- [x] correct FAT layout
 - [ ] Handle DOS name colisions
-- [ ] correct FAT layout
 - [ ] write capabilities
