@@ -170,15 +170,6 @@ impl<'a> DiskStorage<'a> {
             .reserve_cluster()
             .ok_or(SerialDiskError::DiskFull)?;
 
-        let table = StorageTable::new(
-            self.disk_layout.bytes_per_sector() as usize / mem::size_of::<StorageEntry>(),
-        );
-        self.sector_data.insert(
-            self.disk_layout
-                .convert_cluster_to_sector(entry_cluster_index),
-            DiskBloc::Entries(table),
-        );
-
         // Add entry for this folder
         self.add_storage_entry(
             StorageEntry::from_path_and_index(&path, entry_cluster_index)?,
@@ -257,13 +248,54 @@ impl<'a> DiskStorage<'a> {
         if cluster_index == ROOT_INDEX {
             self.root_entries.push(entry)
         } else {
-            match self
-                .sector_data
-                .get_mut(&self.disk_layout.convert_cluster_to_sector(cluster_index))
-            {
-                Some(DiskBloc::Entries(entries)) => entries.push(entry),
-                _ => panic!("Invalid disk bloc: {:#04x}", cluster_index),
-            }
+            self.add_storage_sub_entry(entry, cluster_index)
+        }
+    }
+
+    fn add_storage_sub_entry(
+        &mut self,
+        entry: StorageEntry,
+        cluster_index: u16,
+    ) -> error::Result<()> {
+        assert_ne!(cluster_index, ROOT_INDEX);
+
+        let sector_index = self.disk_layout.convert_cluster_to_sector(cluster_index);
+
+        // Try to add in the current sector
+        if let Ok(()) = self.push_storage_bloc_entries(sector_index, entry.clone()) {
+            return Ok(());
+        }
+
+        // Otherwise try the next sector
+        if let Ok(()) = self.push_storage_bloc_entries(sector_index + 1, entry.clone()) {
+            return Ok(());
+        }
+
+        // Still folder full ...
+        // So we have no choice that getting a new cluster for this !
+        let next_cluster = self
+            .fat
+            .extend_cluster(cluster_index)
+            .ok_or(SerialDiskError::DiskFull)?;
+        self.add_storage_sub_entry(entry, next_cluster)
+    }
+
+    fn push_storage_bloc_entries(
+        &mut self,
+        sector_index: u16,
+        entry: StorageEntry,
+    ) -> error::Result<()> {
+        let table_size =
+            self.disk_layout.bytes_per_sector() as usize / mem::size_of::<StorageEntry>();
+
+        let bloc = self
+            .sector_data
+            .entry(sector_index)
+            .or_insert_with(|| DiskBloc::Entries(StorageTable::new(table_size)));
+
+        match bloc {
+            DiskBloc::Entries(entries) => entries.push(entry),
+            DiskBloc::Data(_) => panic!("Invalid disk bloc sector: {:#04x}", sector_index),
         }
     }
 }
