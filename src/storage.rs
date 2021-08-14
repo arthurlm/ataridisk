@@ -68,13 +68,13 @@ impl<'a> DiskStorage<'a> {
 
             // Read buffer differently depending of sector location
             if index < self.disk_layout.count_fat_sectors() {
-                log::info!("Reading FAT");
+                log::debug!("Reading FAT: {:#04x}", index);
                 buffer_out_slice.clone_from_slice(self.read_fat_sector(index));
             } else if index < self.disk_layout.first_free_sector() {
-                log::info!("Reading root sector");
+                log::debug!("Reading root sector: {:#04x}", index);
                 buffer_out_slice.clone_from_slice(self.read_root_sector(index));
             } else {
-                log::info!("Reading data");
+                log::debug!("Reading data: {:#04x}", index);
                 buffer_out_slice.clone_from_slice(self.read_data_sector(index));
             }
         }

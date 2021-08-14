@@ -12,7 +12,7 @@ mod storage;
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use config::Config;
@@ -90,7 +90,11 @@ fn main() -> anyhow::Result<()> {
     );
     let mut storage = DiskStorage::new(&disk_layout);
 
+    let t_start = Instant::now();
     storage.import_path(&opt.load_path)?;
+    let t_load = t_start.elapsed();
+
+    log::info!("Ready in {:}ms", t_load.as_millis());
 
     state_machine::run(&disk_layout, &storage, &mut serial)?;
 
