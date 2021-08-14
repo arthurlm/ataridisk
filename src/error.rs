@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, time};
 
 use thiserror::Error;
 
@@ -22,6 +22,9 @@ pub enum SerialDiskError {
 
     #[error("folder is full")]
     FolderFull,
+
+    #[error("invalid time: {0}")]
+    InvalidTime(#[from] time::SystemTimeError),
 }
 
 impl PartialEq for SerialDiskError {
@@ -34,6 +37,7 @@ impl PartialEq for SerialDiskError {
                 | (Self::InvalidFilename, Self::InvalidFilename)
                 | (Self::InvalidChars, Self::InvalidChars)
                 | (Self::FolderFull, Self::FolderFull)
+                | (Self::InvalidTime(_), &Self::InvalidTime(_))
         )
     }
 }

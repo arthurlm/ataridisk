@@ -127,14 +127,8 @@ impl StorageEntry {
             StorageAttr::None
         } as u8;
 
-        let metadata = path.metadata().expect("Fail to get file metadata");
-
-        let mtime = metadata
-            .modified()
-            .expect("Fail to get mtime")
-            .duration_since(UNIX_EPOCH)
-            .expect("Fail to get mtime timestamp")
-            .as_secs();
+        let metadata = path.metadata()?;
+        let mtime = metadata.modified()?.duration_since(UNIX_EPOCH)?.as_secs();
         let mtime_naive = NaiveDateTime::from_timestamp(mtime as i64, 0);
 
         let size = metadata.size() as u32;
