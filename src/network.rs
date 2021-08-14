@@ -7,11 +7,17 @@ pub trait NetworkEncode {
 
 impl NetworkEncode for usize {
     fn encode_network(&self) -> [u8; 4] {
-        (*self as u64).encode_network()
+        (*self as u32).encode_network()
     }
 }
 
 impl NetworkEncode for u64 {
+    fn encode_network(&self) -> [u8; 4] {
+        (*self as u32).encode_network()
+    }
+}
+
+impl NetworkEncode for u32 {
     fn encode_network(&self) -> [u8; 4] {
         let mut buf = [0; 4];
         buf[0] = (*self >> 24) as u8;
@@ -31,5 +37,6 @@ mod tests {
         let expected = [0x12, 0x34, 0x56, 0x78];
         assert_eq!(0x12_34_56_78usize.encode_network(), expected);
         assert_eq!(0x12_34_56_78u64.encode_network(), expected);
+        assert_eq!(0x12_34_56_78u32.encode_network(), expected);
     }
 }
