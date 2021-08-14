@@ -109,7 +109,7 @@ impl StorageEntry {
     }
 
     /// Create a new entry from path
-    pub fn from_path_and_index<P>(path: P, cluster_index: u16) -> error::Result<Self>
+    pub fn try_from_path_and_index<P>(path: P, cluster_index: u16) -> error::Result<Self>
     where
         P: AsRef<Path>,
     {
@@ -244,7 +244,7 @@ mod tests {
 
         assert!(!table.is_full());
         assert_eq!(
-            table.push(StorageEntry::from_path_and_index("./data/TEST.TXT", 0x1234).unwrap()),
+            table.push(StorageEntry::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap()),
             Ok(()),
         );
         assert_eq!(

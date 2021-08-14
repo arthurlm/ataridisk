@@ -172,7 +172,7 @@ impl<'a> DiskStorage<'a> {
 
         // Add entry for this folder
         self.add_storage_entry(
-            StorageEntry::from_path_and_index(&path, entry_cluster_index)?,
+            StorageEntry::try_from_path_and_index(&path, entry_cluster_index)?,
             parent_cluster_index,
         )?;
 
@@ -237,7 +237,7 @@ impl<'a> DiskStorage<'a> {
 
         // Add to entry table
         self.add_storage_entry(
-            StorageEntry::from_path_and_index(&path, first_cluster_block_index)?,
+            StorageEntry::try_from_path_and_index(&path, first_cluster_block_index)?,
             parent_index,
         )?;
 
