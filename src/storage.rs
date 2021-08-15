@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, fs, mem, path::Path};
+use std::{collections::HashMap, fmt::Debug, fs, io, mem, path::Path};
 
 use crate::{
     entries::{StorageEntry, StorageTable},
@@ -53,36 +53,38 @@ impl<'a> DiskStorage<'a> {
         }
     }
 
-    pub fn read_sectors(&self, index: u16, count: u16) -> Vec<u8> {
-        let bytes_per_sector = self.disk_layout.bytes_per_sector() as usize;
-        let mut buffer_out = vec![0; count as usize * bytes_per_sector];
-
+    pub fn read_sectors<W>(&self, writer: &mut W, index: u16, count: u16) -> io::Result<()>
+    where
+        W: io::Write,
+    {
         for i in 0..count {
-            // Create new index including what we are currently reading
-            let index = index + i;
-
-            // Create helper to write buffer slice
-            let buffer_out_start = i as usize * bytes_per_sector;
-            let buffer_out_end = buffer_out_start + bytes_per_sector;
-            let buffer_out_slice = &mut buffer_out[buffer_out_start..buffer_out_end];
-
-            // Read buffer differently depending of sector location
-            if index < self.disk_layout.count_fat_sectors() {
-                log::debug!("Reading FAT: {:#04x}", index);
-                buffer_out_slice.clone_from_slice(self.read_fat_sector(index));
-            } else if index < self.disk_layout.first_free_sector() {
-                log::debug!("Reading root sector: {:#04x}", index);
-                buffer_out_slice.clone_from_slice(self.read_root_sector(index));
-            } else {
-                log::debug!("Reading data: {:#04x}", index);
-                buffer_out_slice.clone_from_slice(self.read_data_sector(index));
-            }
+            self.read_sector(writer, index + i)?;
         }
 
-        buffer_out
+        Ok(())
     }
 
-    fn read_fat_sector(&self, sector_index: u16) -> &[u8] {
+    pub fn read_sector<W>(&self, writer: &mut W, index: u16) -> io::Result<()>
+    where
+        W: io::Write,
+    {
+        // Read buffer differently depending of sector location
+        if index < self.disk_layout.count_fat_sectors() {
+            log::debug!("Reading FAT: {:#04x}", index);
+            self.read_fat_sector(writer, index)
+        } else if index < self.disk_layout.first_free_sector() {
+            log::debug!("Reading root sector: {:#04x}", index);
+            self.read_root_sector(writer, index)
+        } else {
+            log::debug!("Reading data: {:#04x}", index);
+            self.read_data_sector(writer, index)
+        }
+    }
+
+    fn read_fat_sector<W>(&self, writer: &mut W, sector_index: u16) -> io::Result<()>
+    where
+        W: io::Write,
+    {
         let bytes_per_sector = self.disk_layout.bytes_per_sector() as usize;
         let buf = self.fat.as_raw();
 
@@ -90,10 +92,13 @@ impl<'a> DiskStorage<'a> {
             * bytes_per_sector;
         let idx_end = idx_start + bytes_per_sector;
 
-        &buf[idx_start..idx_end]
+        writer.write_all(&buf[idx_start..idx_end])
     }
 
-    fn read_root_sector(&self, sector_index: u16) -> &[u8] {
+    fn read_root_sector<W>(&self, writer: &mut W, sector_index: u16) -> io::Result<()>
+    where
+        W: io::Write,
+    {
         let bytes_per_sector = self.disk_layout.bytes_per_sector() as usize;
         let buf = self.root_entries.as_raw();
 
@@ -101,15 +106,18 @@ impl<'a> DiskStorage<'a> {
             * bytes_per_sector;
         let idx_end = idx_start + bytes_per_sector;
 
-        &buf[idx_start..idx_end]
+        writer.write_all(&buf[idx_start..idx_end])
     }
 
-    fn read_data_sector(&self, sector_index: u16) -> &[u8] {
-        match self.sector_data.get(&sector_index) {
+    fn read_data_sector<W>(&self, writer: &mut W, sector_index: u16) -> io::Result<()>
+    where
+        W: io::Write,
+    {
+        writer.write_all(match self.sector_data.get(&sector_index) {
             Some(DiskBloc::Data(data)) => data,
             Some(DiskBloc::Entries(entries)) => entries.as_raw(),
             None => panic!("Read uninitialized sector: {:#04x}", sector_index),
-        }
+        })
     }
 
     pub fn import_path<P>(&mut self, path: P) -> error::Result<()>

@@ -96,7 +96,8 @@ where
             SerialState::ReceiveReadSector => {
                 let (sector_index, sector_count) = read_sector_infos(&buffer);
 
-                let data = storage.read_sectors(sector_index, sector_count);
+                let mut data = vec![];
+                storage.read_sectors(&mut data, sector_index, sector_count)?;
                 write_buffer(serial, &data)?;
 
                 SerialState::Waiting
