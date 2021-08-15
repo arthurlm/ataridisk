@@ -96,8 +96,12 @@ where
             SerialState::ReceiveReadSector => {
                 let (sector_index, sector_count) = read_sector_infos(&buffer);
 
-                let mut data = vec![];
+                let mut data = Vec::with_capacity(
+                    sector_count as usize * disk_layout.bytes_per_sector() as usize,
+                );
                 storage.read_sectors(&mut data, sector_index, sector_count)?;
+                assert_eq!(data.capacity(), data.len(), "Out buffer not fully filled");
+
                 write_buffer(serial, &data)?;
 
                 SerialState::Waiting
