@@ -114,7 +114,6 @@ fn write_buffer<S>(serial: &mut S, data: &[u8]) -> error::Result<()>
 where
     S: SerialPort,
 {
-    let checksum_buf = checksum::compute_buffer(data);
     let compressed = lz4_flex::compress(data);
 
     // Write flags (0 = no compression, 1 = lz4 compression)
@@ -132,7 +131,7 @@ where
     }
 
     // Write checksum
-    serial.write_all(&checksum_buf)?;
+    checksum::write_crc32(serial, data)?;
 
     Ok(())
 }
