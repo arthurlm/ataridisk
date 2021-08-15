@@ -1,15 +1,9 @@
-use std::{io, mem::size_of};
+use std::mem::size_of;
 
+use byteorder::{BigEndian, WriteBytesExt};
 use serde::Deserialize;
 
 use crate::error;
-
-macro_rules! write_big_endian {
-    ($writer:expr, $value:expr) => {{
-        let value = $value;
-        $writer.write_all(&[((value >> 8) & 0xff) as u8, (value & 0xff) as u8])?;
-    }};
-}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -143,22 +137,20 @@ impl DiskLayout {
     /// Convert disk layout to buffer that Atari can understand.
     pub fn write_bios_parameter_block<W>(&self, writer: &mut W) -> error::Result<()>
     where
-        W: io::Write,
+        W: WriteBytesExt,
     {
-        write_big_endian!(writer, self.bytes_per_sector());
-        write_big_endian!(writer, self.sectors_per_cluster());
-        write_big_endian!(writer, self.bytes_per_cluster());
-        write_big_endian!(writer, self.root_directory_sectors());
-        write_big_endian!(writer, self.count_1fat_sectors());
-        write_big_endian!(writer, self.count_2fat_sectors());
-        write_big_endian!(writer, self.first_free_sector());
-        write_big_endian!(writer, self.tos.cluster_count());
+        writer.write_u16::<BigEndian>(self.bytes_per_sector())?;
+        writer.write_u16::<BigEndian>(self.sectors_per_cluster())?;
+        writer.write_u16::<BigEndian>(self.bytes_per_cluster())?;
+        writer.write_u16::<BigEndian>(self.root_directory_sectors())?;
+        writer.write_u16::<BigEndian>(self.count_1fat_sectors())?;
+        writer.write_u16::<BigEndian>(self.count_2fat_sectors())?;
+        writer.write_u16::<BigEndian>(self.first_free_sector())?;
+        writer.write_u16::<BigEndian>(self.tos.cluster_count())?;
 
         // Flags
-        writer.write_all(&[
-            0x00, // 12Bit FAT
-            0x01, // one FAT
-        ])?;
+        writer.write_u8(0x00)?; // 12bit FAT
+        writer.write_u8(0x01)?; // One FAT
 
         Ok(())
     }
