@@ -1,12 +1,13 @@
-use std::mem::size_of;
+use std::{io, mem::size_of};
 
 use serde::Deserialize;
 
+use crate::error;
+
 macro_rules! write_big_endian {
-    ($buffer:expr, $idx:expr, $value:expr) => {{
+    ($writer:expr, $value:expr) => {{
         let value = $value;
-        $buffer[$idx + 0] = ((value >> 8) & 0xff) as u8;
-        $buffer[$idx + 1] = (value & 0xff) as u8;
+        $writer.write_all(&[((value >> 8) & 0xff) as u8, (value & 0xff) as u8])?;
     }};
 }
 
@@ -140,23 +141,26 @@ impl DiskLayout {
     }
 
     /// Convert disk layout to buffer that Atari can understand.
-    pub fn bios_parameter_block(&self) -> [u8; 18] {
-        let mut buffer = [0; 18];
-
-        write_big_endian!(buffer, 0, self.bytes_per_sector());
-        write_big_endian!(buffer, 2, self.sectors_per_cluster());
-        write_big_endian!(buffer, 4, self.bytes_per_cluster());
-        write_big_endian!(buffer, 6, self.root_directory_sectors());
-        write_big_endian!(buffer, 8, self.count_1fat_sectors());
-        write_big_endian!(buffer, 10, self.count_2fat_sectors());
-        write_big_endian!(buffer, 12, self.first_free_sector());
-        write_big_endian!(buffer, 14, self.tos.cluster_count());
+    pub fn write_bios_parameter_block<W>(&self, writer: &mut W) -> error::Result<()>
+    where
+        W: io::Write,
+    {
+        write_big_endian!(writer, self.bytes_per_sector());
+        write_big_endian!(writer, self.sectors_per_cluster());
+        write_big_endian!(writer, self.bytes_per_cluster());
+        write_big_endian!(writer, self.root_directory_sectors());
+        write_big_endian!(writer, self.count_1fat_sectors());
+        write_big_endian!(writer, self.count_2fat_sectors());
+        write_big_endian!(writer, self.first_free_sector());
+        write_big_endian!(writer, self.tos.cluster_count());
 
         // Flags
-        buffer[16] = 0; // 12Bit FAT
-        buffer[17] = 1; // one FAT
+        writer.write_all(&[
+            0x00, // 12Bit FAT
+            0x01, // one FAT
+        ])?;
 
-        buffer
+        Ok(())
     }
 
     /// Convert cluster index to begin sector index.
@@ -223,7 +227,11 @@ mod tests {
 
     #[test]
     fn test_bios_parameter_block() {
-        let param = layout!(Tos::V100, PartitionType::Gem).bios_parameter_block();
+        let mut param = vec![];
+        assert_eq!(
+            layout!(Tos::V100, PartitionType::Gem).write_bios_parameter_block(&mut param),
+            Ok(())
+        );
         assert_eq!(
             param,
             [
@@ -257,7 +265,11 @@ mod tests {
             ]
         );
 
-        let param = layout!(Tos::V104, PartitionType::Bgm).bios_parameter_block();
+        let mut param = vec![];
+        assert_eq!(
+            layout!(Tos::V104, PartitionType::Bgm).write_bios_parameter_block(&mut param),
+            Ok(())
+        );
         assert_eq!(
             param,
             [

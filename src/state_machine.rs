@@ -80,8 +80,7 @@ where
                         // Send Atari disk layout
                         log::info!("Sending atari BIOS parameter block");
 
-                        let payload = disk_layout.bios_parameter_block();
-                        serial.write_all(&payload)?;
+                        disk_layout.write_bios_parameter_block(serial)?;
                         SerialState::Waiting
                     }
                     _ => {
