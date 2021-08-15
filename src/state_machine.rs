@@ -1,9 +1,11 @@
 use std::{thread::sleep, time::Duration};
 
+use byteorder::BigEndian;
+use byteorder::WriteBytesExt;
 use indicatif::ProgressIterator;
 use serialport::SerialPort;
 
-use crate::{checksum, error, layout::DiskLayout, network::NetworkEncode, storage::DiskStorage};
+use crate::{checksum, error, layout::DiskLayout, storage::DiskStorage};
 
 const BUF_MAGIC_START: [u8; 4] = [0x18, 0x03, 0x20, 0x06];
 
@@ -123,7 +125,7 @@ where
 
     if send_compressed {
         // Write data compressed
-        serial.write_all(&compressed.len().encode_network())?;
+        serial.write_u32::<BigEndian>(compressed.len() as u32)?;
         write_buffer_content(serial, &compressed)?;
     } else {
         // Write data uncompressed

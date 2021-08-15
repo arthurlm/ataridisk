@@ -5,7 +5,6 @@ mod entries;
 mod error;
 mod fat;
 mod layout;
-mod network;
 mod state_machine;
 mod storage;
 
