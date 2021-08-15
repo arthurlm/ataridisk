@@ -112,40 +112,40 @@ where
     }
 }
 
-fn write_buffer<S>(serial: &mut S, data: &[u8]) -> error::Result<()>
+fn write_buffer<W>(writer: &mut W, data: &[u8]) -> error::Result<()>
 where
-    S: SerialPort,
+    W: WriteBytesExt,
 {
     let compressed = lz4_flex::compress(data);
 
     // Write flags (0 = no compression, 1 = lz4 compression)
     let send_compressed = compressed.len() < data.len();
     let flags = if send_compressed { 0x01 } else { 0x00 };
-    serial.write_all(&[flags])?;
+    writer.write_u8(flags)?;
 
     if send_compressed {
         // Write data compressed
-        serial.write_u32::<BigEndian>(compressed.len() as u32)?;
-        write_buffer_content(serial, &compressed)?;
+        writer.write_u32::<BigEndian>(compressed.len() as u32)?;
+        write_buffer_content(writer, &compressed)?;
     } else {
         // Write data uncompressed
-        write_buffer_content(serial, data)?;
+        write_buffer_content(writer, data)?;
     }
 
     // Write checksum
-    checksum::write_crc32(serial, data)?;
+    checksum::write_crc32(writer, data)?;
 
     Ok(())
 }
 
-fn write_buffer_content<S>(serial: &mut S, data: &[u8]) -> error::Result<()>
+fn write_buffer_content<W>(writer: &mut W, data: &[u8]) -> error::Result<()>
 where
-    S: SerialPort,
+    W: WriteBytesExt,
 {
     log::info!("Sending data (buffer size: {} bytes)", data.len());
 
     for idx in (0..data.len()).progress() {
-        serial.write_all(&[data[idx]])?;
+        writer.write_u8(data[idx])?;
     }
 
     Ok(())
