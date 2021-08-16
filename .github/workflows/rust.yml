@@ -26,10 +26,14 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev
       - name: Build
         run: cargo build --verbose
       - name: Run tests
-        run: cargo test
+        run: |
+          ./setuptestdata.sh
+          cargo test
       - name: Run lint
         run: cargo clippy
