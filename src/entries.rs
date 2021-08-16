@@ -34,7 +34,7 @@ enum StorageAttr {
 }
 
 /// Storage entry as it is dump on disk
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub struct StorageEntry {
     /// Filestem
@@ -158,7 +158,6 @@ impl StorageEntry {
 #[repr(C)]
 pub struct StorageTable {
     entries: Vec<StorageEntry>,
-    used_count: usize,
 }
 
 impl StorageTable {
@@ -169,10 +168,7 @@ impl StorageTable {
         // Fill buffer with empty entries
         let entries = vec![StorageEntry::EMPTY; count];
 
-        Self {
-            entries,
-            used_count: 0,
-        }
+        Self { entries }
     }
 
     /// Read table as a buffer of u8
@@ -185,22 +181,16 @@ impl StorageTable {
         }
     }
 
-    /// Check if table is full
-    pub fn is_full(&self) -> bool {
-        self.used_count >= self.entries.len()
-    }
-
     /// Add new entry to table and return true of false depending if
     /// table is full or not.
     pub fn push(&mut self, entry: StorageEntry) -> error::Result<()> {
-        if self.is_full() {
-            return Err(SerialDiskError::FolderFull);
-        }
-
-        self.entries[self.used_count] = entry;
-        self.used_count += 1;
-
-        Ok(())
+        self.entries
+            .iter()
+            .position(|e| *e == StorageEntry::EMPTY)
+            .map(|index| {
+                self.entries[index] = entry;
+            })
+            .ok_or(SerialDiskError::FolderFull)
     }
 }
 
@@ -211,35 +201,33 @@ mod tests {
     const EXPECTED_ENTRY_SIZE: usize = 0x20;
 
     #[test]
-    fn test_empty_rentry() {
+    fn test_size_of() {
         assert_eq!(mem::size_of::<StorageEntry>(), EXPECTED_ENTRY_SIZE);
+    }
 
-        // Check empty at init
-        let mut table = StorageTable::new(3);
-        assert!(!table.is_full());
+    #[test]
+    fn test_empty_init_entry() {
+        let table = StorageTable::new(3);
         assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 3]);
+    }
+
+    #[test]
+    fn test_full() {
+        let mut table = StorageTable::new(3);
+        let entry = StorageEntry::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap();
 
         // Check add success and fail the check emptyness
-        assert!(!table.is_full());
-        assert_eq!(table.push(StorageEntry::EMPTY), Ok(()));
-        assert_eq!(table.push(StorageEntry::EMPTY), Ok(()));
-        assert_eq!(table.push(StorageEntry::EMPTY), Ok(()));
-
-        assert!(table.is_full());
-        assert_eq!(
-            table.push(StorageEntry::EMPTY),
-            Err(SerialDiskError::FolderFull)
-        );
-        assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 3]);
+        assert_eq!(table.push(entry.clone()), Ok(()));
+        assert_eq!(table.push(entry.clone()), Ok(()));
+        assert_eq!(table.push(entry.clone()), Ok(()));
+        assert_eq!(table.push(entry.clone()), Err(SerialDiskError::FolderFull));
     }
 
     #[test]
     fn test_content_entry() {
         let mut table = StorageTable::new(1);
-        assert!(!table.is_full());
         assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 1]);
 
-        assert!(!table.is_full());
         assert_eq!(
             table.push(StorageEntry::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap()),
             Ok(()),
@@ -263,10 +251,8 @@ mod tests {
     #[test]
     fn test_from_static_dir_info() {
         let mut table = StorageTable::new(1);
-        assert!(!table.is_full());
         assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 1]);
 
-        assert!(!table.is_full());
         assert_eq!(
             table.push(StorageEntry::from_static_dir_info("TEST", "TXT", 0x1234)),
             Ok(())
