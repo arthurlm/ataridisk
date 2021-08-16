@@ -157,7 +157,7 @@ impl StorageEntry {
 }
 
 /// List of all file contains on the disk.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct StorageTable {
     entries: Vec<StorageEntry>,

@@ -21,7 +21,7 @@ pub struct DiskStorage<'a> {
     disk_layout: &'a DiskLayout,
 
     /// Content of the root sectors
-    root_entries: StorageTable,
+    root_entries: Vec<StorageTable>,
 
     /// Content of the FAT sectors
     fat: FileAllocationTable,
@@ -39,10 +39,12 @@ impl<'a> DiskStorage<'a> {
                 - disk_layout.first_free_cluster() as usize,
         );
 
-        let root_entries = StorageTable::new(
-            disk_layout.root_directory_sectors() as usize * disk_layout.bytes_per_sector() as usize
-                / mem::size_of::<StorageEntry>(),
-        );
+        let root_entries = vec![
+            StorageTable::new(
+                disk_layout.bytes_per_sector() as usize / mem::size_of::<StorageEntry>(),
+            );
+            disk_layout.root_directory_sectors() as usize
+        ];
 
         // Create struct
         Self {
@@ -99,14 +101,10 @@ impl<'a> DiskStorage<'a> {
     where
         W: io::Write,
     {
-        let bytes_per_sector = self.disk_layout.bytes_per_sector() as usize;
-        let buf = self.root_entries.as_raw();
+        let real_sector_index =
+            sector_index as usize - self.disk_layout.count_fat_sectors() as usize;
 
-        let idx_start = (sector_index as usize - self.disk_layout.count_fat_sectors() as usize)
-            * bytes_per_sector;
-        let idx_end = idx_start + bytes_per_sector;
-
-        writer.write_all(&buf[idx_start..idx_end])
+        writer.write_all(self.root_entries[real_sector_index].as_raw())
     }
 
     fn read_data_sector<W>(&self, writer: &mut W, sector_index: u16) -> io::Result<()>
@@ -254,7 +252,13 @@ impl<'a> DiskStorage<'a> {
 
     fn add_storage_entry(&mut self, entry: StorageEntry, cluster_index: u16) -> error::Result<()> {
         if cluster_index == ROOT_INDEX {
-            self.root_entries.push(entry)
+            for i in 0..self.disk_layout.root_directory_sectors() as usize {
+                if self.root_entries[i].push(entry.clone()).is_ok() {
+                    return Ok(());
+                }
+            }
+
+            Err(SerialDiskError::FolderFull)
         } else {
             self.add_storage_sub_entry(entry, cluster_index)
         }
