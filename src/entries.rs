@@ -1,5 +1,6 @@
-use std::{mem, os::unix::prelude::MetadataExt, path::Path, slice, time::UNIX_EPOCH};
+use std::{io, mem, os::unix::prelude::MetadataExt, path::Path, slice, time::UNIX_EPOCH};
 
+use byteorder::{NativeEndian, ReadBytesExt};
 use chrono::prelude::*;
 
 use crate::{
@@ -13,6 +14,16 @@ macro_rules! as_static_str {
         for (i, b) in $input.bytes().into_iter().enumerate() {
             assert!(i < result.len());
             result[i] = b;
+        }
+        result
+    }};
+}
+
+macro_rules! from_reader_static {
+    ($reader:expr, $size:expr) => {{
+        let mut result = [' ' as u8; $size];
+        for i in 0..$size {
+            result[i] = $reader.read_u8()?;
         }
         result
     }};
@@ -151,6 +162,28 @@ impl StorageEntry {
 
         Ok(Self::new(name, ext, attr, mtime_naive, cluster_index, size))
     }
+
+    /// Create an entry from any reader trait (vec, serial port, etc).
+    pub fn try_from_reader<R>(reader: &mut R) -> io::Result<Self>
+    where
+        R: ReadBytesExt,
+    {
+        Ok(Self {
+            name: from_reader_static!(reader, 8),
+            ext: from_reader_static!(reader, 3),
+            attr: reader.read_u8()?,
+            _reserved1: reader.read_u8()?,
+            ctime_ms: reader.read_u8()?,
+            ctime: reader.read_u16::<NativeEndian>()?,
+            cdate: reader.read_u16::<NativeEndian>()?,
+            adate: reader.read_u16::<NativeEndian>()?,
+            _reserved2: reader.read_u16::<NativeEndian>()?,
+            mtime: reader.read_u16::<NativeEndian>()?,
+            mdate: reader.read_u16::<NativeEndian>()?,
+            cluster_index: reader.read_u16::<NativeEndian>()?,
+            size: reader.read_u32::<NativeEndian>()?,
+        })
+    }
 }
 
 /// List of all file contains on the disk.
@@ -169,6 +202,24 @@ impl StorageTable {
         let entries = vec![StorageEntry::EMPTY; count];
 
         Self { entries }
+    }
+
+    /// Create table from reader trait (ex: serial port)
+    pub fn try_from_reader<R>(reader: &mut R, count: usize) -> io::Result<Self>
+    where
+        R: ReadBytesExt,
+    {
+        // Reserve some space
+        let mut entries = Vec::with_capacity(count);
+
+        // Read all the data from reader
+        for _ in 0..count {
+            let entry = StorageEntry::try_from_reader(reader)?;
+            entries.push(entry);
+        }
+        assert_eq!(entries.len(), count);
+
+        Ok(Self { entries })
     }
 
     /// Read table as a buffer of u8
@@ -270,6 +321,34 @@ mod tests {
                 0x34, 0x12, // Cluster index,
                 0x00, 0x00, 0x00, 0x00, // Size
             ]
+        );
+    }
+
+    #[test]
+    fn test_reader_fail() {
+        let empty: Vec<u8> = vec![];
+        assert!(StorageEntry::try_from_reader(&mut empty.as_slice()).is_err());
+    }
+
+    #[test]
+    fn test_reader_valid() {
+        let data = vec![
+            'T' as u8, 'E' as u8, 'S' as u8, 'T' as u8, ' ' as u8, ' ' as u8, ' ' as u8,
+            ' ' as u8, // Filename
+            'T' as u8, 'X' as u8, 'T' as u8, // Extension
+            0x10,      // Attr
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Padding
+            0x00, 0x60, // Time
+            0x01, 0x53, // Date
+            0x34, 0x12, // Cluster index,
+            0x00, 0x00, 0x00, 0x00, // Size
+        ];
+
+        let expected = StorageEntry::from_static_dir_info("TEST", "TXT", 0x1234);
+
+        assert_eq!(
+            StorageEntry::try_from_reader(&mut data.as_slice()).unwrap(),
+            expected
         );
     }
 }
