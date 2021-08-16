@@ -25,6 +25,8 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y libudev-dev
       - name: Build
         run: cargo build --verbose
       - name: Run tests
