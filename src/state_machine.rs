@@ -1,7 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
-use byteorder::BigEndian;
-use byteorder::WriteBytesExt;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indicatif::ProgressIterator;
 use serialport::SerialPort;
 
@@ -26,6 +25,7 @@ enum SerialState {
     Waiting,
     ReceiveReadSector,
     ReceiveWriteSector,
+    ReceiveData,
 }
 
 impl Default for SerialState {
@@ -43,6 +43,7 @@ impl SerialState {
         match &*self {
             Self::Waiting => 5,
             Self::ReceiveReadSector | Self::ReceiveWriteSector => 4,
+            Self::ReceiveData => 1,
         }
     }
 }
@@ -55,12 +56,19 @@ fn read_sector_infos(buffer: &[u8]) -> (u16, u16) {
     (index, count)
 }
 
-pub fn run<S>(disk_layout: &DiskLayout, storage: &DiskStorage, serial: &mut S) -> error::Result<()>
+pub fn run<S>(
+    disk_layout: &DiskLayout,
+    storage: &mut DiskStorage,
+    serial: &mut S,
+) -> error::Result<()>
 where
     S: SerialPort,
 {
-    let mut buffer = [0; 64];
+    let mut buffer = [0; 5];
     let mut state = SerialState::new();
+
+    let mut receive_sector_index = 0;
+    let mut receive_sector_count = 0;
 
     loop {
         log::info!("State: {:?}", state);
@@ -109,10 +117,51 @@ where
 
             // Write command
             SerialState::ReceiveWriteSector => {
-                let (_sector_index, _sector_count) = read_sector_infos(&buffer);
+                let (sector_index, sector_count) = read_sector_infos(&buffer);
+                receive_sector_index = sector_index;
+                receive_sector_count = sector_count;
 
-                unimplemented!();
+                SerialState::ReceiveData
             }
+
+            // Waiting for Atari data
+            SerialState::ReceiveData => match buffer[0] {
+                0x00 => {
+                    // Reserve a buffer for all the data with need to read
+                    let mut data = Vec::with_capacity(
+                        disk_layout.bytes_per_sector() as usize * receive_sector_count as usize,
+                    );
+
+                    // Read the data from Atari over serial port
+                    log::info!("Reading data from Atari (bytes count: {})", data.capacity());
+                    for _ in (0..data.capacity()).progress() {
+                        data.push(serial.read_u8()?);
+                    }
+
+                    // Read the CRC32
+                    let valid_crc = checksum::check_crc32(serial, &data)?;
+                    if valid_crc {
+                        serial.write_u8(0x01)?;
+
+                        storage.write_sectors(
+                            &mut data.as_slice(),
+                            receive_sector_index,
+                            receive_sector_count,
+                        )?;
+
+                        SerialState::Waiting
+                    } else {
+                        serial.write_u8(0x00)?;
+
+                        SerialState::ReceiveData
+                    }
+                }
+                0x1F => unimplemented!("read data with RLE compression"),
+                _ => {
+                    clear_serial(serial)?;
+                    SerialState::Waiting
+                }
+            },
         };
     }
 }

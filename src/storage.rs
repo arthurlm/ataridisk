@@ -9,6 +9,14 @@ use crate::{
 
 const ROOT_INDEX: u16 = 0;
 
+macro_rules! extract_cluster {
+    ($reader:expr, $disk_layout:expr) => {{
+        let mut data = vec![0; $disk_layout.bytes_per_sector() as usize];
+        $reader.read_exact(&mut data)?;
+        data
+    }};
+}
+
 #[derive(Debug)]
 enum DiskBloc {
     Data(Vec<u8>),
@@ -66,6 +74,17 @@ impl<'a> DiskStorage<'a> {
         Ok(())
     }
 
+    pub fn write_sectors<R>(&mut self, reader: &mut R, index: u16, count: u16) -> io::Result<()>
+    where
+        R: io::Read,
+    {
+        for i in 0..count {
+            self.write_sector(reader, index + i)?;
+        }
+
+        Ok(())
+    }
+
     pub fn read_sector<W>(&self, writer: &mut W, index: u16) -> io::Result<()>
     where
         W: io::Write,
@@ -83,39 +102,126 @@ impl<'a> DiskStorage<'a> {
         }
     }
 
+    pub fn write_sector<R>(&mut self, reader: &mut R, index: u16) -> io::Result<()>
+    where
+        R: io::Read,
+    {
+        // Read buffer differently depending of sector location
+        if index < self.disk_layout.count_fat_sectors() {
+            log::debug!("Writing FAT: {:#04x}", index);
+            self.write_fat_sector(reader, index)
+        } else if index < self.disk_layout.first_free_sector() {
+            log::debug!("Writing root sector: {:#04x}", index);
+            self.write_root_sector(reader, index)
+        } else {
+            log::debug!("Writing data: {:#04x}", index);
+            self.write_data_sector(reader, index)
+        }
+    }
+
     fn read_fat_sector<W>(&self, writer: &mut W, sector_index: u16) -> io::Result<()>
     where
         W: io::Write,
     {
+        assert!(
+            sector_index < self.disk_layout.count_fat_sectors(),
+            "Out of range sector"
+        );
+
         let bytes_per_sector = self.disk_layout.bytes_per_sector() as usize;
         let buf = self.fat.as_raw();
 
-        let idx_start = (sector_index as usize - self.disk_layout.count_1fat_sectors() as usize)
-            * bytes_per_sector;
+        // Force sector to 1st FAT
+        // this is a strange behaviour we have to copy from SerialDisk 🤔
+        let idx_start = if sector_index >= self.disk_layout.count_1fat_sectors() {
+            sector_index as usize - self.disk_layout.count_1fat_sectors() as usize
+        } else {
+            sector_index as usize
+        } * bytes_per_sector;
+
         let idx_end = idx_start + bytes_per_sector;
 
         writer.write_all(&buf[idx_start..idx_end])
+    }
+
+    fn write_fat_sector<R>(&mut self, reader: &mut R, sector_index: u16) -> io::Result<()>
+    where
+        R: io::Read,
+    {
+        assert!(
+            sector_index < self.disk_layout.count_fat_sectors(),
+            "Out of range sector"
+        );
+
+        let bytes_per_sector = self.disk_layout.bytes_per_sector() as usize;
+
+        // Force sector to 1st FAT
+        // this is a strange behaviour we have to copy from SerialDisk 🤔
+        let idx_start = if sector_index >= self.disk_layout.count_1fat_sectors() {
+            sector_index as usize - self.disk_layout.count_1fat_sectors() as usize
+        } else {
+            sector_index as usize
+        } * bytes_per_sector;
+
+        self.fat.merge_data(reader, idx_start, bytes_per_sector)
     }
 
     fn read_root_sector<W>(&self, writer: &mut W, sector_index: u16) -> io::Result<()>
     where
         W: io::Write,
     {
+        assert!(
+            sector_index < self.disk_layout.first_free_sector(),
+            "Out of range sector"
+        );
+
         let real_sector_index =
             sector_index as usize - self.disk_layout.count_fat_sectors() as usize;
 
         writer.write_all(self.root_entries[real_sector_index].as_raw())
     }
 
+    fn write_root_sector<R>(&mut self, reader: &mut R, sector_index: u16) -> io::Result<()>
+    where
+        R: io::Read,
+    {
+        assert!(
+            sector_index < self.disk_layout.first_free_sector(),
+            "Out of range sector"
+        );
+
+        let count = self.disk_layout.bytes_per_sector() as usize / mem::size_of::<StorageEntry>();
+        let bloc = StorageTable::try_from_reader(reader, count)?;
+        let real_sector_index =
+            sector_index as usize - self.disk_layout.count_fat_sectors() as usize;
+
+        self.root_entries[real_sector_index] = bloc;
+        Ok(())
+    }
+
     fn read_data_sector<W>(&self, writer: &mut W, sector_index: u16) -> io::Result<()>
     where
         W: io::Write,
     {
-        writer.write_all(match self.sector_data.get(&sector_index) {
-            Some(DiskBloc::Data(data)) => data,
-            Some(DiskBloc::Entries(entries)) => entries.as_raw(),
-            None => panic!("Read uninitialized sector: {:#04x}", sector_index),
-        })
+        match self.sector_data.get(&sector_index) {
+            Some(DiskBloc::Data(data)) => writer.write_all(data),
+            Some(DiskBloc::Entries(entries)) => writer.write_all(entries.as_raw()),
+            None => {
+                log::warn!("Reading uninitialized sector, fallback to empty data bloc");
+                let data = vec![0; self.disk_layout.bytes_per_sector() as usize];
+                writer.write_all(&data)
+            }
+        }
+    }
+
+    fn write_data_sector<R>(&mut self, reader: &mut R, sector_index: u16) -> io::Result<()>
+    where
+        R: io::Read,
+    {
+        let data = extract_cluster!(reader, self.disk_layout);
+        self.sector_data.insert(sector_index, DiskBloc::Data(data));
+
+        Ok(())
     }
 
     pub fn import_path<P>(&mut self, path: P) -> error::Result<()>

@@ -1,4 +1,6 @@
-use std::{mem, slice};
+use std::{io, mem, slice};
+
+use byteorder::{NativeEndian, ReadBytesExt};
 
 #[derive(Debug)]
 #[repr(u16)]
@@ -60,6 +62,25 @@ impl FileAllocationTable {
             self.entries[existing_index as usize] = next_index;
             next_index
         })
+    }
+
+    pub fn merge_data<R>(
+        &mut self,
+        reader: &mut R,
+        bytes_index: usize,
+        bytes_count: usize,
+    ) -> io::Result<()>
+    where
+        R: ReadBytesExt,
+    {
+        assert_eq!(bytes_index % 2, 0, "Bytes index must be odd");
+        assert_eq!(bytes_count % 2, 0, "Bytes count must be odd");
+
+        for i in 0..(bytes_count / 2) {
+            self.entries[bytes_index + i] = reader.read_u16::<NativeEndian>()?;
+        }
+
+        Ok(())
     }
 }
 
@@ -156,5 +177,53 @@ mod tests {
     fn test_extend_panic() {
         let mut fat = FileAllocationTable::new(4);
         assert_eq!(fat.extend_cluster(0x0000), Some(0x0001));
+    }
+
+    #[test]
+    fn test_merge_data() {
+        let mut fat = FileAllocationTable::new(8);
+
+        // Prepare FAT with some data
+        assert_eq!(fat.reserve_cluster(), Some(0x0002));
+        assert_eq!(fat.reserve_cluster(), Some(0x0003));
+        assert_eq!(fat.reserve_cluster(), Some(0x0004));
+        assert_eq!(
+            fat.as_raw(),
+            [
+                0x01, 0x00, // Reserved
+                0x01, 0x00, // Reserved
+                0xFF, 0xFF, // 2
+                0xFF, 0xFF, // 3
+                0xFF, 0xFF, // 4
+                0x00, 0x00, // 5
+                0x00, 0x00, // 6
+                0x00, 0x00, // 7
+            ]
+        );
+
+        // Merge data
+        let new_data = vec![
+            0x05, 0x00, // 2
+            0xFF, 0xFF, // 3
+            0x06, 0x00, // 4
+            0xFF, 0xFF, // 5
+            0xFF, 0xFF, // 6
+        ];
+        assert!(fat
+            .merge_data(&mut new_data.as_slice(), 0x00_02, new_data.len())
+            .is_ok());
+        assert_eq!(
+            fat.as_raw(),
+            [
+                0x01, 0x00, // Reserved
+                0x01, 0x00, // Reserved
+                0x05, 0x00, // 2
+                0xFF, 0xFF, // 3
+                0x06, 0x00, // 4
+                0xFF, 0xFF, // 5
+                0xFF, 0xFF, // 6
+                0x00, 0x00, // 7
+            ]
+        );
     }
 }

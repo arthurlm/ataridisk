@@ -7,5 +7,6 @@
 - [x] config + main
 - [x] tests
 - [x] correct FAT layout
+- [x] write capabilities
 - [ ] Handle DOS name colisions
-- [ ] write capabilities
+- [ ] RAM disk dump

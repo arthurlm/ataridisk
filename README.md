@@ -11,10 +11,10 @@ There is no real purposes on this app except:
 
 ## State of the project
 
-The app for now fully expose folder with:
+The app for now:
 
-- [x] READ capabilities.
-- [ ] WRITE capabilities.
+- [x] fully expose folder as a RAM disk with READ + WRITE capabilities
+- [ ] allow dump of a RAM disk as a real folder
 
 ## How this project differs from SerialDisk
 

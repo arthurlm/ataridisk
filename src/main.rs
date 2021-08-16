@@ -97,7 +97,7 @@ fn main() -> anyhow::Result<()> {
 
     println!("Atari serial disk: READY.");
     println!("Press ^C to exit.");
-    state_machine::run(&disk_layout, &storage, &mut serial)?;
+    state_machine::run(&disk_layout, &mut storage, &mut serial)?;
 
     Ok(())
 }
