@@ -66,6 +66,22 @@ pub struct StorageEntry {
 }
 
 impl StorageEntry {
+    const EMPTY: Self = Self {
+        name: [0; 8],
+        ext: [0; 3],
+        attr: 0,
+        _reserved1: 0,
+        ctime_ms: 0,
+        ctime: 0,
+        cdate: 0,
+        adate: 0,
+        _reserved2: 0,
+        mtime: 0,
+        mdate: 0,
+        cluster_index: 0,
+        size: 0,
+    };
+
     /// Create new entry
     fn new(
         name: [u8; 8],
@@ -135,25 +151,6 @@ impl StorageEntry {
 
         Ok(Self::new(name, ext, attr, mtime_naive, cluster_index, size))
     }
-
-    /// Create an emtpy entry.
-    pub fn empty() -> Self {
-        Self {
-            name: [0; 8],
-            ext: [0; 3],
-            attr: 0,
-            _reserved1: 0,
-            ctime_ms: 0,
-            ctime: 0,
-            cdate: 0,
-            adate: 0,
-            _reserved2: 0,
-            mtime: 0,
-            mdate: 0,
-            cluster_index: 0,
-            size: 0,
-        }
-    }
 }
 
 /// List of all file contains on the disk.
@@ -170,7 +167,7 @@ impl StorageTable {
         assert!(count > 0);
 
         // Fill buffer with empty entries
-        let entries = vec![StorageEntry::empty(); count];
+        let entries = vec![StorageEntry::EMPTY; count];
 
         Self {
             entries,
@@ -224,13 +221,13 @@ mod tests {
 
         // Check add success and fail the check emptyness
         assert!(!table.is_full());
-        assert_eq!(table.push(StorageEntry::empty()), Ok(()));
-        assert_eq!(table.push(StorageEntry::empty()), Ok(()));
-        assert_eq!(table.push(StorageEntry::empty()), Ok(()));
+        assert_eq!(table.push(StorageEntry::EMPTY), Ok(()));
+        assert_eq!(table.push(StorageEntry::EMPTY), Ok(()));
+        assert_eq!(table.push(StorageEntry::EMPTY), Ok(()));
 
         assert!(table.is_full());
         assert_eq!(
-            table.push(StorageEntry::empty()),
+            table.push(StorageEntry::EMPTY),
             Err(SerialDiskError::FolderFull)
         );
         assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 3]);
