@@ -306,8 +306,18 @@ impl<'a> DiskStorage<'a> {
             .or_insert_with(|| DiskBloc::Entries(StorageTable::new(table_size)));
 
         match bloc {
-            DiskBloc::Entries(entries) => entries.push(entry),
-            DiskBloc::Data(_) => panic!("Invalid disk bloc sector: {:#04x}", sector_index),
+            DiskBloc::Entries(table) => table.push(entry),
+            DiskBloc::Data(data) => {
+                // Re-interpret data as StorageTable
+                let mut table = StorageTable::try_from_reader(&mut data.as_slice(), table_size)?;
+                table.push(entry)?;
+
+                // Update stored bloc
+                self.sector_data
+                    .insert(sector_index, DiskBloc::Entries(table));
+
+                Ok(())
+            }
         }
     }
 }
