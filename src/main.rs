@@ -1,6 +1,12 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    process,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread,
     time::{Duration, Instant},
 };
 
@@ -47,6 +53,21 @@ fn print_availables() -> error::Result<()> {
     Ok(())
 }
 
+fn wait_sigterm() -> anyhow::Result<()> {
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })?;
+
+    while running.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_millis(250));
+    }
+
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
@@ -85,7 +106,20 @@ fn main() -> anyhow::Result<()> {
 
     println!("Atari serial disk: READY.");
     println!("Press ^C to exit.");
-    ataridisk::state_machine::run(&mut storage, &mut serial)?;
 
+    // Start listener thread
+    thread::Builder::new()
+        .name("listener".to_string())
+        .spawn(move || {
+            if let Err(error) = ataridisk::state_machine::run(&mut storage, &mut serial) {
+                log::error!("Listener thread as crash. Closing app (error: {})", error);
+                process::exit(1);
+            }
+        })?;
+
+    // Wait for stop signal
+    wait_sigterm()?;
+
+    log::info!("All done. Bye !");
     Ok(())
 }

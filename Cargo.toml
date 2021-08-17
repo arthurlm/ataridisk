@@ -26,6 +26,7 @@ serialport = "4.0.1"
 # CLI stuffs
 structopt = "0.3.22"
 indicatif = "0.16.2"
+ctrlc = "3.2.0"
 
 [profile.release]
 lto = true

@@ -55,6 +55,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "crc-any",
+ "ctrlc",
  "env_logger",
  "indicatif",
  "log",
@@ -161,6 +162,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79269446ee9793fb06fb297c61dd65e53e880fd10bdb222d544db1a98a2f083b"
 dependencies = [
  "debug-helper",
+]
+
+[[package]]
+name = "ctrlc"
+version = "3.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "377c9b002a72a0b2c1a18c62e2f3864bdfea4a015e3683a96e24aa45dd6c02d1"
+dependencies = [
+ "nix 0.22.1",
+ "winapi",
 ]
 
 [[package]]
@@ -305,6 +316,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b16bd47d9e329435e309c58469fe0791c2d0d1ba96ec0954152a5ae2b04387dc"
 
 [[package]]
+name = "memoffset"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59accc507f1338036a0477ef61afdae33cde60840f4dfe481319ce3ad116ddf9"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "nix"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -315,6 +335,19 @@ dependencies = [
  "cfg-if 0.1.10",
  "libc",
  "void",
+]
+
+[[package]]
+name = "nix"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7555d6c7164cc913be1ce7f95cbecdabda61eb2ccd89008524af306fb7f5031"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if 1.0.0",
+ "libc",
+ "memoffset",
 ]
 
 [[package]]
@@ -456,7 +489,7 @@ dependencies = [
  "cfg-if 0.1.10",
  "libudev",
  "mach 0.2.3",
- "nix",
+ "nix 0.16.1",
  "regex",
  "winapi",
 ]
