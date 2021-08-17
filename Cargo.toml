@@ -19,6 +19,7 @@ lz4_flex = { version = "0.8.0", default-features = false }
 serde = { version = "1.0.127", features = ["derive"] }
 serde_json = "1.0.66"
 byteorder = "1.4.3"
+bincode = "1.3.3"
 
 # Serial communication
 serialport = "4.0.1"
