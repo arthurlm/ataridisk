@@ -4,7 +4,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indicatif::ProgressIterator;
 use serialport::SerialPort;
 
-use crate::{checksum, error, layout::DiskLayout, storage::DiskStorage};
+use crate::{checksum, error, storage::DiskStorage};
 
 const BUF_MAGIC_START: [u8; 4] = [0x18, 0x03, 0x20, 0x06];
 
@@ -56,11 +56,7 @@ fn read_sector_infos(buffer: &[u8]) -> (u16, u16) {
     (index, count)
 }
 
-pub fn run<S>(
-    disk_layout: &DiskLayout,
-    storage: &mut DiskStorage,
-    serial: &mut S,
-) -> error::Result<()>
+pub fn run<S>(storage: &mut DiskStorage, serial: &mut S) -> error::Result<()>
 where
     S: SerialPort,
 {
@@ -90,7 +86,7 @@ where
                         // Send Atari disk layout
                         log::info!("Sending atari BIOS parameter block");
 
-                        disk_layout.write_bios_parameter_block(serial)?;
+                        storage.disk_layout.write_bios_parameter_block(serial)?;
                         SerialState::Waiting
                     }
                     _ => {
@@ -105,7 +101,7 @@ where
                 let (sector_index, sector_count) = read_sector_infos(&buffer);
 
                 let mut data = Vec::with_capacity(
-                    sector_count as usize * disk_layout.bytes_per_sector() as usize,
+                    sector_count as usize * storage.disk_layout.bytes_per_sector() as usize,
                 );
                 storage.read_sectors(&mut data, sector_index, sector_count)?;
                 assert_eq!(data.capacity(), data.len(), "Out buffer not fully filled");
@@ -129,7 +125,8 @@ where
                 0x00 => {
                     // Reserve a buffer for all the data with need to read
                     let mut data = Vec::with_capacity(
-                        disk_layout.bytes_per_sector() as usize * receive_sector_count as usize,
+                        storage.disk_layout.bytes_per_sector() as usize
+                            * receive_sector_count as usize,
                     );
 
                     // Read the data from Atari over serial port

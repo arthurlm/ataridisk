@@ -24,9 +24,9 @@ enum DiskBloc {
 }
 
 #[derive(Debug)]
-pub struct DiskStorage<'a> {
+pub struct DiskStorage {
     /// Contains disk layout information and bytes mapping
-    disk_layout: &'a DiskLayout,
+    pub disk_layout: DiskLayout,
 
     /// Content of the root sectors
     root_entries: Vec<StorageTable>,
@@ -38,8 +38,8 @@ pub struct DiskStorage<'a> {
     sector_data: HashMap<u16, DiskBloc>,
 }
 
-impl<'a> DiskStorage<'a> {
-    pub fn new(disk_layout: &'a DiskLayout) -> Self {
+impl DiskStorage {
+    pub fn new(disk_layout: DiskLayout) -> Self {
         // Init buffers
         let fat = FileAllocationTable::new(
             ((disk_layout.count_1fat_sectors() as usize * disk_layout.bytes_per_sector() as usize)

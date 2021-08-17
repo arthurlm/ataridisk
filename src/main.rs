@@ -75,7 +75,7 @@ fn main() -> anyhow::Result<()> {
         config.partition_type.clone(),
         config.root_directory_sectors(),
     );
-    let mut storage = DiskStorage::new(&disk_layout);
+    let mut storage = DiskStorage::new(disk_layout);
 
     let t_start = Instant::now();
     storage.import_path(&opt.load_path)?;
@@ -85,7 +85,7 @@ fn main() -> anyhow::Result<()> {
 
     println!("Atari serial disk: READY.");
     println!("Press ^C to exit.");
-    ataridisk::state_machine::run(&disk_layout, &mut storage, &mut serial)?;
+    ataridisk::state_machine::run(&mut storage, &mut serial)?;
 
     Ok(())
 }
