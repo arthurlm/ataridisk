@@ -1,23 +1,11 @@
-mod checksum;
-mod config;
-mod dos;
-mod entries;
-mod error;
-mod fat;
-mod layout;
-mod state_machine;
-mod storage;
-
 use std::{
     fs,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
-use config::Config;
-use layout::DiskLayout;
+use ataridisk::{config::Config, error, layout::DiskLayout, storage::DiskStorage};
 use serialport::{ClearBuffer, DataBits, FlowControl, Parity, SerialPort, StopBits};
-use storage::DiskStorage;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -97,7 +85,7 @@ fn main() -> anyhow::Result<()> {
 
     println!("Atari serial disk: READY.");
     println!("Press ^C to exit.");
-    state_machine::run(&disk_layout, &mut storage, &mut serial)?;
+    ataridisk::state_machine::run(&disk_layout, &mut storage, &mut serial)?;
 
     Ok(())
 }
