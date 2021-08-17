@@ -1,10 +1,11 @@
 use std::{
-    fs,
+    fs::{self, File},
+    io::BufWriter,
     path::{Path, PathBuf},
     process,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     thread,
     time::{Duration, Instant},
@@ -27,6 +28,10 @@ struct Opt {
     /// Port to connect with
     #[structopt(long, short, default_value = "/dev/ttyUSB0")]
     port: String,
+
+    /// RAM disk dump filename
+    #[structopt(long, short, default_value = "ramdisk.dump")]
+    dump: String,
 
     /// Path to import as virtual disk content
     load_path: PathBuf,
@@ -78,6 +83,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // Load config and init serial from it
     let config = opt.config();
     log::info!("Configuration: {:?}", config);
 
@@ -91,6 +97,7 @@ fn main() -> anyhow::Result<()> {
 
     serial.clear(ClearBuffer::All)?;
 
+    // Build RAM disk + load content from real FS
     let disk_layout = DiskLayout::new(
         config.tos.clone(),
         config.partition_type.clone(),
@@ -104,21 +111,34 @@ fn main() -> anyhow::Result<()> {
 
     log::info!("Ready in {:}ms", t_load.as_millis());
 
+    // Create dedicated thread and start main loop
+    let storage = Arc::new(Mutex::new(storage));
+
     println!("Atari serial disk: READY.");
     println!("Press ^C to exit.");
 
     // Start listener thread
-    thread::Builder::new()
-        .name("listener".to_string())
-        .spawn(move || {
-            if let Err(error) = ataridisk::state_machine::run(&mut storage, &mut serial) {
-                log::error!("Listener thread as crash. Closing app (error: {})", error);
-                process::exit(1);
-            }
-        })?;
+    {
+        let storage = storage.clone();
+        thread::Builder::new()
+            .name("listener".to_string())
+            .spawn(move || {
+                if let Err(error) = ataridisk::state_machine::run(storage, &mut serial) {
+                    log::error!("Listener thread as crash. Closing app (error: {})", error);
+                    process::exit(1);
+                }
+            })?;
+    }
 
     // Wait for stop signal
     wait_sigterm()?;
+
+    // Dump disk for latter purposes
+    log::info!("Dumping RAM disk to {}", opt.dump);
+    let dump_file = File::create(opt.dump)?;
+    let dump_writer = BufWriter::new(dump_file);
+    let storage = storage.lock().unwrap();
+    bincode::serialize_into(dump_writer, &*storage)?;
 
     log::info!("All done. Bye !");
     Ok(())

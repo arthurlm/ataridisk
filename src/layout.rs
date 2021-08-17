@@ -1,11 +1,11 @@
 use std::mem::size_of;
 
 use byteorder::{BigEndian, WriteBytesExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum PartitionType {
     Gem,
@@ -32,7 +32,7 @@ impl Default for PartitionType {
 }
 
 //. TOS supported versions.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum Tos {
     V100,
     V104,
@@ -55,7 +55,7 @@ impl Default for Tos {
 }
 
 /// Helper to represent FAT12 / FAT16 disk layout.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct DiskLayout {
     tos: Tos,
     partition_type: PartitionType,

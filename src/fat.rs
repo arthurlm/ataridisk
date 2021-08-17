@@ -1,6 +1,7 @@
 use std::{io, mem, slice};
 
 use byteorder::{NativeEndian, ReadBytesExt};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
 #[repr(u16)]
@@ -10,7 +11,7 @@ enum ClusterValue {
     EndOfClusterChain = 0xFFFF,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 #[repr(C)]
 pub struct FileAllocationTable {
     entries: Vec<u16>,

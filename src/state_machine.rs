@@ -1,4 +1,8 @@
-use std::{thread::sleep, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    thread::sleep,
+    time::Duration,
+};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indicatif::ProgressIterator;
@@ -56,7 +60,7 @@ fn read_sector_infos(buffer: &[u8]) -> (u16, u16) {
     (index, count)
 }
 
-pub fn run<S>(storage: &mut DiskStorage, serial: &mut S) -> error::Result<()>
+pub fn run<S>(storage: Arc<Mutex<DiskStorage>>, serial: &mut S) -> error::Result<()>
 where
     S: SerialPort,
 {
@@ -86,6 +90,7 @@ where
                         // Send Atari disk layout
                         log::info!("Sending atari BIOS parameter block");
 
+                        let storage = storage.lock().unwrap();
                         storage.disk_layout.write_bios_parameter_block(serial)?;
                         SerialState::Waiting
                     }
@@ -100,6 +105,7 @@ where
             SerialState::ReceiveReadSector => {
                 let (sector_index, sector_count) = read_sector_infos(&buffer);
 
+                let storage = storage.lock().unwrap();
                 let mut data = Vec::with_capacity(
                     sector_count as usize * storage.disk_layout.bytes_per_sector() as usize,
                 );
@@ -123,6 +129,8 @@ where
             // Waiting for Atari data
             SerialState::ReceiveData => match buffer[0] {
                 0x00 => {
+                    let mut storage = storage.lock().unwrap();
+
                     // Reserve a buffer for all the data with need to read
                     let mut data = Vec::with_capacity(
                         storage.disk_layout.bytes_per_sector() as usize

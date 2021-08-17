@@ -2,6 +2,7 @@ use std::{io, mem, os::unix::prelude::MetadataExt, path::Path, slice, time::UNIX
 
 use byteorder::{NativeEndian, ReadBytesExt};
 use chrono::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     dos,
@@ -45,7 +46,7 @@ enum StorageAttr {
 }
 
 /// Storage entry as it is dump on disk
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(C)]
 pub struct StorageEntry {
     /// Filestem
@@ -187,7 +188,7 @@ impl StorageEntry {
 }
 
 /// List of all file contains on the disk.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[repr(C)]
 pub struct StorageTable {
     entries: Vec<StorageEntry>,

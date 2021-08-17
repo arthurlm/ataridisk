@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, fs, io, mem, path::Path};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     entries::{StorageEntry, StorageTable},
     error::{self, SerialDiskError},
@@ -17,13 +19,13 @@ macro_rules! extract_cluster {
     }};
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 enum DiskBloc {
     Data(Vec<u8>),
     Entries(StorageTable),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct DiskStorage {
     /// Contains disk layout information and bytes mapping
     pub disk_layout: DiskLayout,
