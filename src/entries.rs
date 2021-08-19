@@ -72,9 +72,9 @@ pub struct StorageEntry {
     /// Last modification date
     mdate: u16,
     /// Start cluster index
-    cluster_index: u16,
+    pub cluster_index: u16,
     /// File size
-    size: u32,
+    pub size: u32,
 }
 
 impl StorageEntry {
@@ -185,6 +185,17 @@ impl StorageEntry {
             size: reader.read_u32::<NativeEndian>()?,
         })
     }
+
+    pub fn filename(&self) -> error::Result<String> {
+        let stem = String::from_utf8(self.name.to_vec())?;
+        let ext = String::from_utf8(self.ext.to_vec())?;
+
+        Ok(format!("{}.{}", stem.trim(), ext.trim()))
+    }
+
+    pub fn is_dir(&self) -> bool {
+        self.attr == StorageAttr::Directory as u8
+    }
 }
 
 /// List of all file contains on the disk.
@@ -243,6 +254,14 @@ impl StorageTable {
                 self.entries[index] = entry;
             })
             .ok_or(SerialDiskError::FolderFull)
+    }
+
+    pub fn as_vec(&self) -> Vec<StorageEntry> {
+        self.entries
+            .iter()
+            .filter(|e| **e != StorageEntry::EMPTY)
+            .cloned()
+            .collect()
     }
 }
 
@@ -351,5 +370,26 @@ mod tests {
             StorageEntry::try_from_reader(&mut data.as_slice()).unwrap(),
             expected
         );
+    }
+
+    #[test]
+    fn test_infos() {
+        let entry = StorageEntry::from_static_dir_info("TEST", "TXT", 0x1234);
+
+        assert_eq!(entry.filename().unwrap(), "TEST.TXT");
+        assert!(entry.is_dir());
+    }
+
+    #[test]
+    fn test_list_entry() {
+        // Prepare a table with a lot of space in it
+        let mut table = StorageTable::new(2096);
+        let entry = StorageEntry::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap();
+        assert_eq!(table.push(entry.clone()), Ok(()));
+        assert_eq!(table.push(entry.clone()), Ok(()));
+        assert_eq!(table.push(entry.clone()), Ok(()));
+
+        // Check we have only added entry in list
+        assert_eq!(table.as_vec(), vec![entry; 3]);
     }
 }

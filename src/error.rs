@@ -25,6 +25,12 @@ pub enum SerialDiskError {
 
     #[error("invalid time: {0}")]
     InvalidTime(#[from] time::SystemTimeError),
+
+    #[error("invalid string: {0}")]
+    StringParse(#[from] std::string::FromUtf8Error),
+
+    #[error("invalid attributes")]
+    InvalidAttr,
 }
 
 impl PartialEq for SerialDiskError {
@@ -38,6 +44,8 @@ impl PartialEq for SerialDiskError {
                 | (Self::InvalidChars, Self::InvalidChars)
                 | (Self::FolderFull, Self::FolderFull)
                 | (Self::InvalidTime(_), &Self::InvalidTime(_))
+                | (Self::StringParse(_), &Self::StringParse(_))
+                | (Self::InvalidAttr, Self::InvalidAttr)
         )
     }
 }
