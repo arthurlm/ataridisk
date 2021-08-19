@@ -37,18 +37,18 @@ fn format_datetime_to_atari(dt: NaiveDateTime) -> (u16, u16) {
     (time, date)
 }
 
-/// Attribute that can be apply to storage entry.
+/// Attribute that can be apply to file.
 #[derive(Debug)]
 #[repr(u8)]
-enum StorageAttr {
+enum FileAttr {
     None = 0x00,
     Directory = 0x10,
 }
 
-/// Storage entry as it is dump on disk
+/// Item as it is dump on disk
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(C)]
-pub struct StorageEntry {
+pub struct FileInfo {
     /// Filestem
     name: [u8; 8],
     /// Extension
@@ -77,7 +77,7 @@ pub struct StorageEntry {
     pub size: u32,
 }
 
-impl StorageEntry {
+impl FileInfo {
     const EMPTY: Self = Self {
         name: [0; 8],
         ext: [0; 3],
@@ -94,7 +94,7 @@ impl StorageEntry {
         size: 0,
     };
 
-    /// Create new entry
+    /// Create new file
     fn new(
         name: [u8; 8],
         ext: [u8; 3],
@@ -122,11 +122,11 @@ impl StorageEntry {
         }
     }
 
-    // Create new entry from static information
+    // Create new file from static information
     pub fn from_static_dir_info(filename: &str, extension: &str, cluster_index: u16) -> Self {
         let name = as_static_str!(filename, 8);
         let ext = as_static_str!(extension, 3);
-        let attr = StorageAttr::Directory as u8;
+        let attr = FileAttr::Directory as u8;
         let mtime_naive = NaiveDateTime::new(
             NaiveDate::from_ymd(2021, 8, 1),
             NaiveTime::from_hms(12, 0, 0),
@@ -136,7 +136,7 @@ impl StorageEntry {
         Self::new(name, ext, attr, mtime_naive, cluster_index, size)
     }
 
-    /// Create a new entry from path
+    /// Create a new file from path
     pub fn try_from_path_and_index<P>(path: P, cluster_index: u16) -> error::Result<Self>
     where
         P: AsRef<Path>,
@@ -150,9 +150,9 @@ impl StorageEntry {
         let ext = as_static_str!(ext, 3);
 
         let attr = if path.is_dir() {
-            StorageAttr::Directory
+            FileAttr::Directory
         } else {
-            StorageAttr::None
+            FileAttr::None
         } as u8;
 
         let metadata = path.metadata()?;
@@ -164,7 +164,7 @@ impl StorageEntry {
         Ok(Self::new(name, ext, attr, mtime_naive, cluster_index, size))
     }
 
-    /// Create an entry from any reader trait (vec, serial port, etc).
+    /// Create an file from any reader trait (vec, serial port, etc).
     pub fn try_from_reader<R>(reader: &mut R) -> io::Result<Self>
     where
         R: ReadBytesExt,
@@ -194,26 +194,25 @@ impl StorageEntry {
     }
 
     pub fn is_dir(&self) -> bool {
-        self.attr == StorageAttr::Directory as u8
+        self.attr == FileAttr::Directory as u8
     }
 }
 
 /// List of all file contains on the disk.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[repr(C)]
-pub struct StorageTable {
-    entries: Vec<StorageEntry>,
+pub struct DirectoryContent {
+    file_infos: Vec<FileInfo>,
 }
 
-impl StorageTable {
+impl DirectoryContent {
     /// Create table with a given number of entries.
     pub fn new(count: usize) -> Self {
         assert!(count > 0);
 
-        // Fill buffer with empty entries
-        let entries = vec![StorageEntry::EMPTY; count];
-
-        Self { entries }
+        Self {
+            file_infos: vec![FileInfo::EMPTY; count],
+        }
     }
 
     /// Create table from reader trait (ex: serial port)
@@ -222,44 +221,44 @@ impl StorageTable {
         R: ReadBytesExt,
     {
         // Reserve some space
-        let mut entries = Vec::with_capacity(count);
+        let mut file_infos = Vec::with_capacity(count);
 
         // Read all the data from reader
         for _ in 0..count {
-            let entry = StorageEntry::try_from_reader(reader)?;
-            entries.push(entry);
+            let file_info = FileInfo::try_from_reader(reader)?;
+            file_infos.push(file_info);
         }
-        assert_eq!(entries.len(), count);
+        assert_eq!(file_infos.len(), count);
 
-        Ok(Self { entries })
+        Ok(Self { file_infos })
     }
 
     /// Read table as a buffer of u8
     pub fn as_raw(&self) -> &[u8] {
         unsafe {
             slice::from_raw_parts(
-                self.entries.as_ptr() as *const u8,
-                self.entries.len() * mem::size_of::<StorageEntry>(),
+                self.file_infos.as_ptr() as *const u8,
+                self.file_infos.len() * mem::size_of::<FileInfo>(),
             )
         }
     }
 
-    /// Add new entry to table and return true of false depending if
+    /// Add new file to directory and return true of false depending if
     /// table is full or not.
-    pub fn push(&mut self, entry: StorageEntry) -> error::Result<()> {
-        self.entries
+    pub fn push(&mut self, file_info: FileInfo) -> error::Result<()> {
+        self.file_infos
             .iter()
-            .position(|e| *e == StorageEntry::EMPTY)
+            .position(|e| *e == FileInfo::EMPTY)
             .map(|index| {
-                self.entries[index] = entry;
+                self.file_infos[index] = file_info;
             })
             .ok_or(SerialDiskError::FolderFull)
     }
 
-    pub fn as_vec(&self) -> Vec<StorageEntry> {
-        self.entries
+    pub fn as_vec(&self) -> Vec<FileInfo> {
+        self.file_infos
             .iter()
-            .filter(|e| **e != StorageEntry::EMPTY)
+            .filter(|e| **e != FileInfo::EMPTY)
             .cloned()
             .collect()
     }
@@ -269,38 +268,41 @@ impl StorageTable {
 mod tests {
     use super::*;
 
-    const EXPECTED_ENTRY_SIZE: usize = 0x20;
+    const EXPECTED_FILE_INFO_SIZE: usize = 0x20;
 
     #[test]
     fn test_size_of() {
-        assert_eq!(mem::size_of::<StorageEntry>(), EXPECTED_ENTRY_SIZE);
+        assert_eq!(mem::size_of::<FileInfo>(), EXPECTED_FILE_INFO_SIZE);
     }
 
     #[test]
-    fn test_empty_init_entry() {
-        let table = StorageTable::new(3);
-        assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 3]);
+    fn test_empty_init() {
+        let table = DirectoryContent::new(3);
+        assert_eq!(table.as_raw(), [0; EXPECTED_FILE_INFO_SIZE * 3]);
     }
 
     #[test]
     fn test_full() {
-        let mut table = StorageTable::new(3);
-        let entry = StorageEntry::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap();
+        let mut table = DirectoryContent::new(3);
+        let file_info = FileInfo::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap();
 
         // Check add success and fail the check emptyness
-        assert_eq!(table.push(entry.clone()), Ok(()));
-        assert_eq!(table.push(entry.clone()), Ok(()));
-        assert_eq!(table.push(entry.clone()), Ok(()));
-        assert_eq!(table.push(entry.clone()), Err(SerialDiskError::FolderFull));
+        assert_eq!(table.push(file_info.clone()), Ok(()));
+        assert_eq!(table.push(file_info.clone()), Ok(()));
+        assert_eq!(table.push(file_info.clone()), Ok(()));
+        assert_eq!(
+            table.push(file_info.clone()),
+            Err(SerialDiskError::FolderFull)
+        );
     }
 
     #[test]
-    fn test_content_entry() {
-        let mut table = StorageTable::new(1);
-        assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 1]);
+    fn test_content() {
+        let mut table = DirectoryContent::new(1);
+        assert_eq!(table.as_raw(), [0; EXPECTED_FILE_INFO_SIZE * 1]);
 
         assert_eq!(
-            table.push(StorageEntry::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap()),
+            table.push(FileInfo::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap()),
             Ok(()),
         );
         assert_eq!(
@@ -321,11 +323,11 @@ mod tests {
 
     #[test]
     fn test_from_static_dir_info() {
-        let mut table = StorageTable::new(1);
-        assert_eq!(table.as_raw(), [0; EXPECTED_ENTRY_SIZE * 1]);
+        let mut table = DirectoryContent::new(1);
+        assert_eq!(table.as_raw(), [0; EXPECTED_FILE_INFO_SIZE * 1]);
 
         assert_eq!(
-            table.push(StorageEntry::from_static_dir_info("TEST", "TXT", 0x1234)),
+            table.push(FileInfo::from_static_dir_info("TEST", "TXT", 0x1234)),
             Ok(())
         );
         assert_eq!(
@@ -347,7 +349,7 @@ mod tests {
     #[test]
     fn test_reader_fail() {
         let empty: Vec<u8> = vec![];
-        assert!(StorageEntry::try_from_reader(&mut empty.as_slice()).is_err());
+        assert!(FileInfo::try_from_reader(&mut empty.as_slice()).is_err());
     }
 
     #[test]
@@ -364,32 +366,32 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, // Size
         ];
 
-        let expected = StorageEntry::from_static_dir_info("TEST", "TXT", 0x1234);
+        let expected = FileInfo::from_static_dir_info("TEST", "TXT", 0x1234);
 
         assert_eq!(
-            StorageEntry::try_from_reader(&mut data.as_slice()).unwrap(),
+            FileInfo::try_from_reader(&mut data.as_slice()).unwrap(),
             expected
         );
     }
 
     #[test]
     fn test_infos() {
-        let entry = StorageEntry::from_static_dir_info("TEST", "TXT", 0x1234);
+        let file_info = FileInfo::from_static_dir_info("TEST", "TXT", 0x1234);
 
-        assert_eq!(entry.filename().unwrap(), "TEST.TXT");
-        assert!(entry.is_dir());
+        assert_eq!(file_info.filename().unwrap(), "TEST.TXT");
+        assert!(file_info.is_dir());
     }
 
     #[test]
-    fn test_list_entry() {
+    fn test_list() {
         // Prepare a table with a lot of space in it
-        let mut table = StorageTable::new(2096);
-        let entry = StorageEntry::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap();
-        assert_eq!(table.push(entry.clone()), Ok(()));
-        assert_eq!(table.push(entry.clone()), Ok(()));
-        assert_eq!(table.push(entry.clone()), Ok(()));
+        let mut table = DirectoryContent::new(2096);
+        let file_info = FileInfo::try_from_path_and_index("./data/TEST.TXT", 0x1234).unwrap();
+        assert_eq!(table.push(file_info.clone()), Ok(()));
+        assert_eq!(table.push(file_info.clone()), Ok(()));
+        assert_eq!(table.push(file_info.clone()), Ok(()));
 
-        // Check we have only added entry in list
-        assert_eq!(table.as_vec(), vec![entry; 3]);
+        // Check we have only added few files in list
+        assert_eq!(table.as_vec(), vec![file_info; 3]);
     }
 }

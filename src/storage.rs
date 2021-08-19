@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Debug, fs, io, mem, path::Path};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    entries::{StorageEntry, StorageTable},
+    entries::{DirectoryContent, FileInfo},
     error::{self, SerialDiskError},
     fat::FileAllocationTable,
     layout::DiskLayout,
@@ -22,7 +22,7 @@ macro_rules! extract_cluster {
 #[derive(Debug, Deserialize, Serialize)]
 enum DiskBloc {
     Data(Vec<u8>),
-    Entries(StorageTable),
+    Entries(DirectoryContent),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -31,7 +31,7 @@ pub struct DiskStorage {
     pub disk_layout: DiskLayout,
 
     /// Content of the root sectors
-    root_entries: Vec<StorageTable>,
+    root_entries: Vec<DirectoryContent>,
 
     /// Content of the FAT sectors
     fat: FileAllocationTable,
@@ -50,8 +50,8 @@ impl DiskStorage {
         );
 
         let root_entries = vec![
-            StorageTable::new(
-                disk_layout.bytes_per_sector() as usize / mem::size_of::<StorageEntry>(),
+            DirectoryContent::new(
+                disk_layout.bytes_per_sector() as usize / mem::size_of::<FileInfo>(),
             );
             disk_layout.root_directory_sectors() as usize
         ];
@@ -192,8 +192,8 @@ impl DiskStorage {
             "Out of range sector"
         );
 
-        let count = self.disk_layout.bytes_per_sector() as usize / mem::size_of::<StorageEntry>();
-        let bloc = StorageTable::try_from_reader(reader, count)?;
+        let count = self.disk_layout.bytes_per_sector() as usize / mem::size_of::<FileInfo>();
+        let bloc = DirectoryContent::try_from_reader(reader, count)?;
         let real_sector_index =
             sector_index as usize - self.disk_layout.count_fat_sectors() as usize;
 
@@ -286,17 +286,17 @@ impl DiskStorage {
 
         // Add entry for this folder
         self.add_storage_entry(
-            StorageEntry::try_from_path_and_index(&path, entry_cluster_index)?,
+            FileInfo::try_from_path_and_index(&path, entry_cluster_index)?,
             parent_cluster_index,
         )?;
 
         // Add . and .. in new folder
         self.add_storage_entry(
-            StorageEntry::from_static_dir_info(".", "", entry_cluster_index),
+            FileInfo::from_static_dir_info(".", "", entry_cluster_index),
             entry_cluster_index,
         )?;
         self.add_storage_entry(
-            StorageEntry::from_static_dir_info("..", "", parent_cluster_index),
+            FileInfo::from_static_dir_info("..", "", parent_cluster_index),
             entry_cluster_index,
         )?;
 
@@ -351,14 +351,14 @@ impl DiskStorage {
 
         // Add to entry table
         self.add_storage_entry(
-            StorageEntry::try_from_path_and_index(&path, first_cluster_block_index)?,
+            FileInfo::try_from_path_and_index(&path, first_cluster_block_index)?,
             parent_index,
         )?;
 
         Ok(())
     }
 
-    fn add_storage_entry(&mut self, entry: StorageEntry, cluster_index: u16) -> error::Result<()> {
+    fn add_storage_entry(&mut self, entry: FileInfo, cluster_index: u16) -> error::Result<()> {
         if cluster_index == ROOT_INDEX {
             for i in 0..self.disk_layout.root_directory_sectors() as usize {
                 if self.root_entries[i].push(entry.clone()).is_ok() {
@@ -372,11 +372,7 @@ impl DiskStorage {
         }
     }
 
-    fn add_storage_sub_entry(
-        &mut self,
-        entry: StorageEntry,
-        cluster_index: u16,
-    ) -> error::Result<()> {
+    fn add_storage_sub_entry(&mut self, entry: FileInfo, cluster_index: u16) -> error::Result<()> {
         assert_ne!(cluster_index, ROOT_INDEX);
 
         let sector_index = self.disk_layout.convert_cluster_to_sector(cluster_index);
@@ -403,21 +399,21 @@ impl DiskStorage {
     fn push_storage_bloc_entries(
         &mut self,
         sector_index: u16,
-        entry: StorageEntry,
+        entry: FileInfo,
     ) -> error::Result<()> {
-        let table_size =
-            self.disk_layout.bytes_per_sector() as usize / mem::size_of::<StorageEntry>();
+        let table_size = self.disk_layout.bytes_per_sector() as usize / mem::size_of::<FileInfo>();
 
         let bloc = self
             .sector_data
             .entry(sector_index)
-            .or_insert_with(|| DiskBloc::Entries(StorageTable::new(table_size)));
+            .or_insert_with(|| DiskBloc::Entries(DirectoryContent::new(table_size)));
 
         match bloc {
             DiskBloc::Entries(table) => table.push(entry),
             DiskBloc::Data(data) => {
                 // Re-interpret data as StorageTable
-                let mut table = StorageTable::try_from_reader(&mut data.as_slice(), table_size)?;
+                let mut table =
+                    DirectoryContent::try_from_reader(&mut data.as_slice(), table_size)?;
                 table.push(entry)?;
 
                 // Update stored bloc
