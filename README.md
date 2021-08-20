@@ -13,8 +13,8 @@ There is no real purposes on this app except:
 
 The app for now:
 
-- fully expose folder as a RAM disk with READ + WRITE capabilities
-- allow dump of a RAM disk as a real folder
+- fully expose folder as a RAM disk with READ + WRITE capabilities (using `ataridisk` utility)
+- allow dump of a RAM disk as a real folder (using `dump2disk` utility)
 
 ## How this project differs from SerialDisk
 
