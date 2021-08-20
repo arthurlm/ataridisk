@@ -74,7 +74,7 @@ pub struct FileInfo {
     /// Start cluster index
     pub cluster_index: u16,
     /// File size
-    pub size: u32,
+    size: u32,
 }
 
 impl FileInfo {
@@ -190,11 +190,22 @@ impl FileInfo {
         let stem = String::from_utf8(self.name.to_vec())?;
         let ext = String::from_utf8(self.ext.to_vec())?;
 
-        Ok(format!("{}.{}", stem.trim(), ext.trim()))
+        let stem = stem.trim();
+        let ext = ext.trim();
+
+        if ext.is_empty() {
+            Ok(stem.to_string())
+        } else {
+            Ok(format!("{}.{}", stem, ext))
+        }
     }
 
     pub fn is_dir(&self) -> bool {
         self.attr == FileAttr::Directory as u8
+    }
+
+    pub fn size(&self) -> usize {
+        self.size as usize
     }
 }
 
@@ -378,8 +389,9 @@ mod tests {
     fn test_infos() {
         let file_info = FileInfo::from_static_dir_info("TEST", "TXT", 0x1234);
 
-        assert_eq!(file_info.filename().unwrap(), "TEST.TXT");
         assert!(file_info.is_dir());
+        assert_eq!(file_info.filename().unwrap(), "TEST.TXT");
+        assert_eq!(file_info.size(), 0);
     }
 
     #[test]

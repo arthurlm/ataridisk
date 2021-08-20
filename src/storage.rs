@@ -19,6 +19,12 @@ macro_rules! extract_cluster {
     }};
 }
 
+macro_rules! table_size {
+    ($disk_layout:expr) => {
+        $disk_layout.bytes_per_sector() as usize / mem::size_of::<FileInfo>()
+    };
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 enum DiskBloc {
     Data(Vec<u8>),
@@ -50,9 +56,7 @@ impl DiskStorage {
         );
 
         let root_entries = vec![
-            DirectoryContent::new(
-                disk_layout.bytes_per_sector() as usize / mem::size_of::<FileInfo>(),
-            );
+            DirectoryContent::new(table_size!(disk_layout));
             disk_layout.root_directory_sectors() as usize
         ];
 
@@ -192,7 +196,7 @@ impl DiskStorage {
             "Out of range sector"
         );
 
-        let count = self.disk_layout.bytes_per_sector() as usize / mem::size_of::<FileInfo>();
+        let count = table_size!(self.disk_layout);
         let bloc = DirectoryContent::try_from_reader(reader, count)?;
         let real_sector_index =
             sector_index as usize - self.disk_layout.count_fat_sectors() as usize;
@@ -401,7 +405,7 @@ impl DiskStorage {
         sector_index: u16,
         entry: FileInfo,
     ) -> error::Result<()> {
-        let table_size = self.disk_layout.bytes_per_sector() as usize / mem::size_of::<FileInfo>();
+        let table_size = table_size!(self.disk_layout);
 
         let bloc = self
             .sector_data
@@ -423,5 +427,61 @@ impl DiskStorage {
                 Ok(())
             }
         }
+    }
+
+    pub fn list_root_file_infos(&self) -> Vec<FileInfo> {
+        self.root_entries
+            .iter()
+            .map(|dir| dir.as_vec())
+            .flatten()
+            .collect()
+    }
+
+    pub fn read_file(&self, file_info: &FileInfo) -> error::Result<Vec<u8>> {
+        assert!(!file_info.is_dir(), "Cannot read dir as a file");
+
+        // Get clusters and reserve some space to dump file
+        let cluster_indexes = self.fat.list_chain(file_info.cluster_index);
+        let mut content = Vec::with_capacity(
+            cluster_indexes.len() * self.disk_layout.bytes_per_cluster() as usize,
+        );
+
+        // Read all cluster
+        for cluster_index in cluster_indexes {
+            let sector_index = self.disk_layout.convert_cluster_to_sector(cluster_index);
+            self.read_sector(&mut content, sector_index)?;
+            self.read_sector(&mut content, sector_index + 1)?;
+        }
+
+        // This is a little hack to remove unused bytes per sector
+        content.resize(file_info.size(), 0);
+
+        Ok(content)
+    }
+
+    pub fn read_dir(&self, file_info: &FileInfo) -> error::Result<Vec<FileInfo>> {
+        assert!(file_info.is_dir(), "Cannot read file as a dir");
+
+        let mut entries = Vec::new();
+        let table_size = table_size!(self.disk_layout);
+
+        macro_rules! read_entries {
+            ($sector_index:expr) => {{
+                let mut data = Vec::with_capacity(self.disk_layout.bytes_per_sector() as usize);
+                self.read_sector(&mut data, $sector_index)?;
+
+                let content = DirectoryContent::try_from_reader(&mut data.as_slice(), table_size)?;
+                content.as_vec()
+            }};
+        }
+
+        for cluster_index in self.fat.list_chain(file_info.cluster_index) {
+            let sector_index = self.disk_layout.convert_cluster_to_sector(cluster_index);
+
+            entries.extend(read_entries!(sector_index));
+            entries.extend(read_entries!(sector_index + 1));
+        }
+
+        Ok(entries)
     }
 }

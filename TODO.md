@@ -8,5 +8,5 @@
 - [x] tests
 - [x] correct FAT layout
 - [x] write capabilities
+- [x] RAM disk dump
 - [ ] Handle DOS name colisions
-- [ ] RAM disk dump
