@@ -83,6 +83,28 @@ impl FileAllocationTable {
 
         Ok(())
     }
+
+    pub fn list_chain(&self, start_block: u16) -> Vec<u16> {
+        if start_block <= ClusterValue::Reserved as u16 {
+            return Vec::new();
+        }
+
+        let mut chain = Vec::new();
+        let mut block = start_block;
+
+        while block != ClusterValue::EndOfClusterChain as u16 {
+            chain.push(block);
+
+            assert!(
+                (block as usize) < self.entries.len(),
+                "Out of range block: {:#04x}",
+                block
+            );
+            block = self.entries[block as usize];
+        }
+
+        chain
+    }
 }
 
 #[cfg(test)]
@@ -226,5 +248,33 @@ mod tests {
                 0x00, 0x00, // 7
             ]
         );
+    }
+
+    #[test]
+    fn test_list_special_values() {
+        let mut fat = FileAllocationTable::new(10);
+        assert!(fat.reserve_cluster().is_some());
+        assert!(fat.reserve_cluster().is_some());
+
+        assert_eq!(fat.list_chain(0x00_00).len(), 0);
+        assert_eq!(fat.list_chain(0x00_01).len(), 0);
+        assert_eq!(fat.list_chain(0xFF_FF).len(), 0);
+
+        assert_ne!(fat.list_chain(0x00_02).len(), 0);
+    }
+
+    #[test]
+    fn test_list() {
+        // Prepare FAT
+        let mut fat = FileAllocationTable::new(10);
+        assert_eq!(fat.reserve_cluster(), Some(0x0002));
+        assert_eq!(fat.extend_cluster(0x0002), Some(0x0003));
+        assert_eq!(fat.extend_cluster(0x0003), Some(0x0004));
+        assert_eq!(fat.reserve_cluster(), Some(0x0005));
+        assert_eq!(fat.extend_cluster(0x0005), Some(0x0006));
+
+        // List chains
+        assert_eq!(fat.list_chain(0x00_02), vec![0x00_02, 0x00_03, 0x00_04]);
+        assert_eq!(fat.list_chain(0x00_05), vec![0x00_05, 0x00_06]);
     }
 }
